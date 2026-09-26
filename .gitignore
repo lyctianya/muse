@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# 前端
+web/node_modules/
+web/dist/
+
+# 数据与密钥（绝不提交）
+.env
+*.parquet
+exports/
+pgdata/
+
+# 系统
+.DS_Store
+
+# 运行日志
+logs/

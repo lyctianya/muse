@@ -1,0 +1,44 @@
+# 股票数据管道：三服务编排（db / fetcher / api）
+# 敏感配置全部来自 .env（见 .env.example），不进镜像不进代码。
+
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: stocks
+      POSTGRES_USER: stockapp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"   # 调试/merger 直连用；不需要可注释掉
+
+  fetcher:
+    build: ./fetcher
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://stockapp:${POSTGRES_PASSWORD}@db:5432/stocks
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_REPO: ${GITHUB_REPO:-}
+      TZ: Asia/Shanghai
+      FETCH_WORKERS: 8
+    depends_on:
+      - db
+
+  api:
+    build:
+      context: .            # 多阶段构建需要同时拿到 api/ 与 web/
+      dockerfile: api/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://stockapp:${POSTGRES_PASSWORD}@db:5432/stocks
+      TZ: Asia/Shanghai
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
