@@ -6,6 +6,7 @@ import CompanyView from '../views/CompanyView.vue'
 import WeeksView from '../views/WeeksView.vue'
 import MarketExtraView from '../views/MarketExtraView.vue'
 import SyncView from '../views/SyncView.vue'
+import ScreenerView from '../views/ScreenerView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -17,6 +18,7 @@ const router = createRouter({
     { path: '/weeks', name: 'weeks', component: WeeksView },
     { path: '/extra', name: 'extra', component: MarketExtraView },
     { path: '/sync', name: 'sync', component: SyncView },
+    { path: '/screener', name: 'screener', component: ScreenerView },
   ],
 })
 
