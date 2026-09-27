@@ -17,17 +17,21 @@
 ├── fetcher/                  # 拉取端：Python + APScheduler
 │   ├── config.py / db.py     # 配置 / 连接池 + upsert
 │   ├── sources/cn.py         # A股（AkShare + 前复权校验 + yfinance 兜底）
+│   ├── sources/cn_fundamentals.py  # A股基本面（公司/财务/股东，近2年）
 │   ├── sources/hk.py         # 港股（腾讯 + yfinance）
 │   ├── sources/us.py         # 美股（Stooq 主 + yfinance 备）
 │   ├── jobs/backfill.py      # 历史回填（断点续跑）
+│   ├── jobs/backfill_fundamentals.py  # 基本面回填（A股近2年）
 │   ├── jobs/daily_fetch.py   # 每日增量拉取
 │   ├── jobs/weekly_export.py # 周导出 Parquet + GitHub Release 发布
 │   └── scheduler.py          # 调度器入口
 ├── api/                      # FastAPI 查询接口 + 前端托管
 ├── web/                      # Vue 3 + Vite + Arco Design + ECharts 前端
+│   └── src/views/CompanyView.vue  # A股公司详情页（基本面/MACD）
 ├── merger/                   # 用户侧独立合并工具
 ├── scripts/                  # 本机工具（如全量 Parquet 导入）
-└── sql/schema.sql            # 建表语句
+├── sql/schema.sql            # 建表语句（行情）
+└── sql/schema_fundamentals.sql  # 建表语句（基本面，10 张表）
 ```
 
 ## 使用方法
@@ -290,6 +294,35 @@ Parquet 是通用格式，不用本工具也能导入 DuckDB / SQLite 等。
 | `GET /api/bars?market=cn&symbol=600519&from=2026-01-01&to=2026-09-26` | K 线数据 |
 | `GET /api/weeks` | 周文件列表 |
 | `GET /api/health` | 健康检查 |
+| `GET /api/company?symbol=600519` | 公司基本信息（行业/PE/PB/市值，A股） |
+| `GET /api/financials?symbol=600519&type=income` | 财务三表/指标（type=income/balance/cashflow/indicator） |
+| `GET /api/business?symbol=600519` | 主营业务构成 |
+| `GET /api/holders?symbol=600519&type=top10` | 前十大股东（type=top10/float10） |
+| `GET /api/pledge?symbol=600519` | 股权质押 |
+| `GET /api/holder-numbers?symbol=600519` | 股东人数历史 |
+| `GET /api/holder-trades?symbol=600519` | 股东增减持 |
+| `GET /api/tech?market=cn&symbol=600519&from=2026-01-01&to=2026-09-26&indicator=macd` | 技术指标（macd/kdj/boll，本地计算） |
+
+### 8. A股基本面数据（近 2 年）
+
+基本面表结构见 `sql/schema_fundamentals.sql`（10 张表：公司信息、财务三表、
+财务指标、主营构成、十大股东、质押、股东人数、增减持）。
+
+```bash
+# 1) 建表
+set -a && source .env && set +a
+psql "$DATABASE_URL" -f sql/schema_fundamentals.sql
+
+# 2) 回填（A股现役名单，近 2 年；沙箱网络不通，需在本机跑）
+.venv/bin/python -m fetcher.jobs.backfill_fundamentals --limit 5   # 先拿 5 只冒烟
+.venv/bin/python -m fetcher.jobs.backfill_fundamentals             # 全量
+
+# 3) 前端查看：搜索页点某只 A股 的「基本面」按钮，或直接访问
+#    http://127.0.0.1:5173/company/600519
+```
+
+前端公司详情页含：基本信息（PE/PB/市值/行业）、K线+MACD、
+财务三表/指标、主营业务、十大股东、股东增减持。
 
 ## 注意事项
 

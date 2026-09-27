@@ -28,6 +28,16 @@
       <template #market="{ record }">
         <a-tag :color="marketColor(record.market)">{{ marketLabel(record.market) }}</a-tag>
       </template>
+      <template #action="{ record }">
+        <a-button
+          v-if="record.market === 'cn'"
+          type="text"
+          size="small"
+          @click.stop="goCompany(record)"
+        >
+          基本面
+        </a-button>
+      </template>
     </a-table>
   </a-card>
 </template>
@@ -48,6 +58,7 @@ const columns = [
   { title: '代码', dataIndex: 'symbol', width: 140 },
   { title: '名称', dataIndex: 'name', ellipsis: true },
   { title: '币种', dataIndex: 'currency', width: 100 },
+  { title: '操作', slotName: 'action', width: 120 },
 ]
 
 const LABELS = { cn: 'A股', hk: '港股', us: '美股' }
@@ -76,6 +87,14 @@ function goChart(record) {
   router.push({
     name: 'chart',
     params: { market: record.market, symbol: record.symbol },
+    query: { name: record.name },
+  })
+}
+
+function goCompany(record) {
+  router.push({
+    name: 'company',
+    params: { symbol: record.symbol },
     query: { name: record.name },
   })
 }

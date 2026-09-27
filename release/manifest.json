@@ -1,0 +1,13 @@
+{
+  "release": "data-2026-09-26-full",
+  "date": "2026-09-26",
+  "description": "A股/港股/美股 10年日线全量数据（前复权），2016-09-26 起",
+  "files": {
+    "cn-2016-2026-full.parquet": {"market": "cn", "rows": 10310431, "symbols": 5566, "from": "2016-09-26", "to": "2026-09-24"},
+    "hk-2016-2026-full.parquet": {"market": "hk", "rows": 4472437, "symbols": 1986, "from": "2016-09-26", "to": "2026-09-25"},
+    "us-2016-2026-full.parquet": {"market": "us", "rows": 17746808, "symbols": 12730, "from": "2016-09-26", "to": "2026-09-25"}
+  },
+  "columns": ["market", "symbol", "trade_date", "open", "high", "low", "close", "volume", "amount", "pct_change", "currency"],
+  "adjustment": "前复权（以最新交易日为锚）",
+  "format": "parquet (snappy)"
+}
