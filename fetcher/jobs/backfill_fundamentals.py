@@ -43,10 +43,17 @@ def _get_cn_symbols() -> list:
 
 
 def backfill_market_wide() -> None:
-    """全市场维度：股权质押快照 + 股东增减持。"""
+    """全市场维度：股权质押快照 + 股东增减持（单个失败不影响另一个）。"""
     t0 = time.time()
-    n1 = cn_fundamentals.upsert_pledge_all()
-    n2 = cn_fundamentals.upsert_holder_trade_all()
+    n1 = n2 = 0
+    try:
+        n1 = cn_fundamentals.upsert_pledge_all()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("全市场质押失败：%s", exc)
+    try:
+        n2 = cn_fundamentals.upsert_holder_trade_all()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("全市场增减持失败：%s", exc)
     log.info("全市场维度完成：质押 %d 条，增减持 %d 条，耗时 %.1fs",
              n1, n2, time.time() - t0)
 

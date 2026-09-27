@@ -43,10 +43,13 @@ def apply() -> bool:
 
     _orig_request = requests.sessions.Session.request
 
+    # impersonation 版本可通过环境变量覆盖（如 TLS_IMPERSONATE=safari15_5）
+    _impersonate = os.environ.get("TLS_IMPERSONATE", "chrome124")
+
     def _patched_request(self, method, url, **kwargs):
         if isinstance(url, str) and any(h in url for h in _BLOCKED_HOSTS):
             kwargs = {k: v for k, v in kwargs.items() if k in _SAFE_KWARGS}
-            kwargs.setdefault("impersonate", "chrome")
+            kwargs.setdefault("impersonate", _impersonate)
             kwargs.setdefault("proxies", proxies)
             # curl_cffi 在本机出口下会被 tar-pit（曾观测到 300s 才超时），
             # 强制上限 30s 让上层重试逻辑能快速失败、快速重试。

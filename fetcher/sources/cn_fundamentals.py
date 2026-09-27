@@ -282,11 +282,11 @@ def upsert_main_business(symbol: str) -> int:
     n = 0
     with pool.connection() as conn, conn.cursor() as cur:
         for _, row in df.iterrows():
-            rd = _to_date(_pick(row, "报告期", "报告日期"))
+            rd = _to_date(_pick(row, "报告日期", "报告期"))
             if not rd or rd < _cutoff():
                 continue
-            category = str(_pick(row, "分类", "类型") or "")
-            item = str(_pick(row, "项目", "名称", "分项") or "")
+            category = str(_pick(row, "分类类型", "分类", "类型") or "")
+            item = str(_pick(row, "主营构成", "项目", "名称", "分项") or "")
             if not item:
                 continue
             cur.execute(
@@ -299,10 +299,10 @@ def upsert_main_business(symbol: str) -> int:
                      revenue_ratio=EXCLUDED.revenue_ratio,
                      profit=EXCLUDED.profit, profit_ratio=EXCLUDED.profit_ratio""",
                 (symbol, rd, category, item,
-                 _to_float(_pick(row, "营业收入", "收入")),
-                 _to_float(_pick(row, "收入占比")),
-                 _to_float(_pick(row, "营业利润", "利润")),
-                 _to_float(_pick(row, "利润占比"))))
+                 _to_float(_pick(row, "主营收入", "营业收入", "收入")),
+                 _to_float(_pick(row, "收入比例", "收入占比")),
+                 _to_float(_pick(row, "主营利润", "营业利润", "利润")),
+                 _to_float(_pick(row, "利润比例", "利润占比"))))
             n += 1
     log.info("[%s] 主营构成入库 %d 条", symbol, n)
     return n
@@ -324,7 +324,8 @@ def _quarter_ends() -> list:
         q -= 1
         if q < 0:
             q, y = 3, y - 1
-    return [d for d in out if d >= _cutoff()]
+    # 过滤未来日期（如本季度末还没到），否则接口返回空导致 akshare 解析报错
+    return [d for d in out if _cutoff() <= d <= today]
 
 
 @_util.retry("十大股东")
@@ -379,10 +380,10 @@ def upsert_holder_number(symbol: str) -> int:
     n = 0
     with pool.connection() as conn, conn.cursor() as cur:
         for _, row in df.iterrows():
-            rd = _to_date(_pick(row, "统计日期", "日期", "报告期"))
+            rd = _to_date(_pick(row, "股东户数统计截止日", "统计日期", "日期", "报告期"))
             if not rd or rd < _cutoff():
                 continue
-            cnt = _to_float(_pick(row, "股东人数", "股东户数", "户数"))
+            cnt = _to_float(_pick(row, "股东户数-本次", "股东人数", "股东户数", "户数"))
             cur.execute(
                 """INSERT INTO holder_number
                    (market, symbol, report_date, holder_count, avg_shares, data)
@@ -393,7 +394,7 @@ def upsert_holder_number(symbol: str) -> int:
                      data=EXCLUDED.data, updated_at=now()""",
                 (symbol, rd,
                  int(cnt) if cnt else None,
-                 _to_float(_pick(row, "户均持股", "平均持股")),
+                 _to_float(_pick(row, "户均持股数量", "户均持股", "平均持股")),
                  _row_json(row)))
             n += 1
     log.info("[%s] 股东人数入库 %d 期", symbol, n)
@@ -406,7 +407,12 @@ def upsert_holder_number(symbol: str) -> int:
 def upsert_pledge_all(stat_date: Optional[date] = None) -> int:
     """全市场质押比例快照。stat_date 缺省为今天。"""
     d = stat_date or date.today()
-    df = ak.stock_gpzy_pledge_ratio_em(date=d.strftime("%Y%m%d"))
+    try:
+        df = ak.stock_gpzy_pledge_ratio_em(date=d.strftime("%Y%m%d"))
+    except TypeError as exc:
+        # akshare 内部解析异常（如 result 为 None），重试无意义，直接跳过
+        log.warning("股权质押接口返回异常（%s），跳过本轮", exc)
+        return 0
     if df is None or df.empty:
         return 0
     pool = db.get_pool()
