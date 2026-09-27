@@ -59,7 +59,7 @@
       </a-row>
 
       <!-- 财务 / 股东 Tabs -->
-      <a-tabs>
+      <a-tabs @change="onTabChange">
         <a-tab-pane key="income" title="利润表">
           <fin-table :rows="financials.income" />
         </a-tab-pane>
@@ -123,6 +123,153 @@
             </template>
           </a-table>
         </a-tab-pane>
+        <a-tab-pane key="daily-basic" title="每日指标">
+          <div v-if="dailyBasic.length">
+            <a-card title="PE / PB 趋势（近250日）" size="small" style="margin-bottom: 16px">
+              <div ref="pePbEl" style="width: 100%; height: 320px"></div>
+            </a-card>
+            <a-table :data="dailyBasic" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="交易日" data-index="trade_date" />
+                <a-table-column title="PE" data-index="pe">
+                  <template #cell="{ record }">{{ fmtNum(record.pe) }}</template>
+                </a-table-column>
+                <a-table-column title="PE(TTM)" data-index="pe_ttm">
+                  <template #cell="{ record }">{{ fmtNum(record.pe_ttm) }}</template>
+                </a-table-column>
+                <a-table-column title="PB" data-index="pb">
+                  <template #cell="{ record }">{{ fmtNum(record.pb) }}</template>
+                </a-table-column>
+                <a-table-column title="PS" data-index="ps">
+                  <template #cell="{ record }">{{ fmtNum(record.ps) }}</template>
+                </a-table-column>
+                <a-table-column title="股息率" data-index="dv_ratio">
+                  <template #cell="{ record }">{{ fmtPct(record.dv_ratio) }}</template>
+                </a-table-column>
+                <a-table-column title="换手率" data-index="turnover_rate">
+                  <template #cell="{ record }">{{ fmtPct(record.turnover_rate) }}</template>
+                </a-table-column>
+                <a-table-column title="总市值" data-index="total_mv">
+                  <template #cell="{ record }">{{ fmtMoney((record.total_mv ?? 0) * 1e4) }}</template>
+                </a-table-column>
+                <a-table-column title="流通市值" data-index="circ_mv">
+                  <template #cell="{ record }">{{ fmtMoney((record.circ_mv ?? 0) * 1e4) }}</template>
+                </a-table-column>
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
+        <a-tab-pane key="dividend" title="分红送股">
+          <div v-if="dividend.length">
+            <a-table :data="dividend" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="公告日" data-index="ann_date" />
+                <a-table-column title="分红年度" data-index="end_date" />
+                <a-table-column title="进度" data-index="div_proc" />
+                <a-table-column title="每股分红" data-index="cash_div">
+                  <template #cell="{ record }">{{ record.cash_div != null ? fmtNum(record.cash_div) + ' 元/股' : '--' }}</template>
+                </a-table-column>
+                <a-table-column title="每股送股" data-index="stk_div">
+                  <template #cell="{ record }">{{ record.stk_div != null ? fmtNum(record.stk_div) + ' 股/股' : '--' }}</template>
+                </a-table-column>
+                <a-table-column title="每股转增" data-index="stk_bo_rate">
+                  <template #cell="{ record }">{{ record.stk_bo_rate != null ? fmtNum(record.stk_bo_rate) + ' 股/股' : '--' }}</template>
+                </a-table-column>
+                <a-table-column title="股权登记日" data-index="record_date" />
+                <a-table-column title="除权除息日" data-index="ex_date" />
+                <a-table-column title="派息日" data-index="pay_date" />
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
+        <a-tab-pane key="forecast" title="业绩预告">
+          <div v-if="forecast.length">
+            <a-table :data="forecast" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="公告日" data-index="ann_date" />
+                <a-table-column title="报告期" data-index="end_date" />
+                <a-table-column title="预告类型" data-index="ptype">
+                  <template #cell="{ record }">
+                    <a-tag :color="ptypeColor(record.ptype)">{{ record.ptype }}</a-tag>
+                  </template>
+                </a-table-column>
+                <a-table-column title="净利润下限" data-index="net_profit_min">
+                  <template #cell="{ record }">{{ fmtMoney((record.net_profit_min ?? 0) * 1e4) }}</template>
+                </a-table-column>
+                <a-table-column title="净利润上限" data-index="net_profit_max">
+                  <template #cell="{ record }">{{ fmtMoney((record.net_profit_max ?? 0) * 1e4) }}</template>
+                </a-table-column>
+                <a-table-column title="上年同期" data-index="last_parent_net">
+                  <template #cell="{ record }">{{ fmtMoney((record.last_parent_net ?? 0) * 1e4) }}</template>
+                </a-table-column>
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
+        <a-tab-pane key="express" title="业绩快报">
+          <div v-if="express.length">
+            <a-table :data="express" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="公告日" data-index="ann_date" />
+                <a-table-column title="报告期" data-index="end_date" />
+                <a-table-column title="营收" data-index="revenue">
+                  <template #cell="{ record }">{{ fmtMoney(record.revenue) }}</template>
+                </a-table-column>
+                <a-table-column title="净利润" data-index="net_profit">
+                  <template #cell="{ record }">{{ fmtMoney(record.net_profit) }}</template>
+                </a-table-column>
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
+        <a-tab-pane key="moneyflow" title="资金流向">
+          <div v-if="moneyflow.length">
+            <a-card title="主力净流入（近60日，万元）" size="small" style="margin-bottom: 16px">
+              <div ref="mfEl" style="width: 100%; height: 320px"></div>
+            </a-card>
+            <a-table :data="moneyflow" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="交易日" data-index="trade_date" />
+                <a-table-column title="净流入(万)" data-index="net_mf_amount">
+                  <template #cell="{ record }">
+                    <span :style="{ color: (record.net_mf_amount ?? 0) >= 0 ? '#ef232a' : '#14b143' }">
+                      {{ fmtNum(record.net_mf_amount) }}
+                    </span>
+                  </template>
+                </a-table-column>
+                <a-table-column title="小单净(万)">
+                  <template #cell="{ record }">{{ fmtNum((record.buy_sm_amount ?? 0) - (record.sell_sm_amount ?? 0)) }}</template>
+                </a-table-column>
+                <a-table-column title="中单净(万)">
+                  <template #cell="{ record }">{{ fmtNum((record.buy_md_amount ?? 0) - (record.sell_md_amount ?? 0)) }}</template>
+                </a-table-column>
+                <a-table-column title="大单净(万)">
+                  <template #cell="{ record }">{{ fmtNum((record.buy_lg_amount ?? 0) - (record.sell_lg_amount ?? 0)) }}</template>
+                </a-table-column>
+                <a-table-column title="特大单净(万)">
+                  <template #cell="{ record }">{{ fmtNum((record.buy_elg_amount ?? 0) - (record.sell_elg_amount ?? 0)) }}</template>
+                </a-table-column>
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
+        <a-tab-pane key="suspend" title="停复牌">
+          <div v-if="suspend.length">
+            <a-table :data="suspend" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="停牌日期" data-index="suspend_date" />
+                <a-table-column title="复牌日期" data-index="resume_date" />
+                <a-table-column title="停牌原因" data-index="suspend_reason" />
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
       </a-tabs>
     </a-spin>
   </a-card>
@@ -143,10 +290,14 @@ const title = computed(() => `${stockName.value} ${props.symbol}`.trim())
 const chartEl = ref(null)
 const incomeEl = ref(null)
 const roeEl = ref(null)
+const pePbEl = ref(null)
+const mfEl = ref(null)
 const loading = ref(false)
 let chart = null
 let incomeChart = null
 let roeChart = null
+let pePbChart = null
+let mfChart = null
 
 const today = new Date()
 const fmt = (d) => d.toISOString().slice(0, 10)
@@ -159,6 +310,13 @@ const financials = ref({ income: [], balance: [], cashflow: [], indicator: [] })
 const business = ref([])
 const holders = ref([])
 const trades = ref([])
+// Tushare 增量数据
+const dailyBasic = ref([])
+const dividend = ref([])
+const forecast = ref([])
+const express = ref([])
+const moneyflow = ref([])
+const suspend = ref([])
 
 // 通用财务表：把 data JSON 的键值对转成行
 const FinTable = {
@@ -195,6 +353,13 @@ function fmtMoney(v) {
 function fmtPct(v) {
   if (v == null) return '--'
   return Number(v).toFixed(2) + '%'
+}
+function ptypeColor(t) {
+  if (!t) return 'gray'
+  if (t.includes('预增')) return 'red'
+  if (t.includes('预减')) return 'green'
+  if (t.includes('扭亏')) return 'blue'
+  return 'gray'
 }
 
 async function getJSON(url) {
@@ -233,6 +398,25 @@ async function loadAll() {
     await nextTick()
     renderIncomeChart()
     renderRoeChart()
+
+    // Tushare 增量数据（并行拉取，与日期范围无关）
+    const [db250, div, fc, ex, mf, sp] = await Promise.all([
+      getJSON(`/api/daily-basic?${q}&limit=250`),
+      getJSON(`/api/dividend?${q}`),
+      getJSON(`/api/forecast?${q}`),
+      getJSON(`/api/express?${q}`),
+      getJSON(`/api/moneyflow?${q}&limit=60`),
+      getJSON(`/api/suspend?${q}`),
+    ])
+    dailyBasic.value = db250
+    dividend.value = div
+    forecast.value = fc
+    express.value = ex
+    moneyflow.value = mf
+    suspend.value = sp
+    await nextTick()
+    renderPePbChart()
+    renderMfChart()
   } catch (e) {
     Message.error(`加载失败：${e.message}`)
   } finally {
@@ -334,6 +518,66 @@ function onResize() {
   chart && chart.resize()
   incomeChart && incomeChart.resize()
   roeChart && roeChart.resize()
+  pePbChart && pePbChart.resize()
+  mfChart && mfChart.resize()
+}
+
+// tab 切换后重算图表尺寸（隐藏 tab 内初始化的图表宽高为 0）
+function onTabChange() {
+  nextTick(() => {
+    pePbChart && pePbChart.resize()
+    mfChart && mfChart.resize()
+  })
+}
+
+function renderPePbChart() {
+  if (!pePbEl.value || !dailyBasic.value.length) return
+  pePbChart && pePbChart.dispose()
+  pePbChart = echarts.init(pePbEl.value)
+  // 按交易日升序
+  const rows = [...dailyBasic.value].reverse()
+  const dates = rows.map((r) => r.trade_date)
+  const pick = (k) => rows.map((r) => (r[k] != null ? +Number(r[k]).toFixed(2) : '-'))
+  pePbChart.setOption({
+    animation: false,
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['PE', 'PB'] },
+    grid: { left: '8%', right: '8%', top: '12%', bottom: '12%' },
+    xAxis: { type: 'category', data: dates, axisLabel: { hideOverlap: true, fontSize: 10 } },
+    yAxis: [
+      { type: 'value', name: 'PE' },
+      { type: 'value', name: 'PB' },
+    ],
+    series: [
+      { name: 'PE', type: 'line', data: pick('pe'), smooth: true, showSymbol: false,
+        lineStyle: { width: 1.5 }, yAxisIndex: 0 },
+      { name: 'PB', type: 'line', data: pick('pb'), smooth: true, showSymbol: false,
+        lineStyle: { width: 1.5 }, yAxisIndex: 1 },
+    ],
+  })
+}
+
+function renderMfChart() {
+  if (!mfEl.value || !moneyflow.value.length) return
+  mfChart && mfChart.dispose()
+  mfChart = echarts.init(mfEl.value)
+  const rows = [...moneyflow.value].reverse()
+  const dates = rows.map((r) => r.trade_date)
+  const net = rows.map((r) => (r.net_mf_amount != null ? +Number(r.net_mf_amount).toFixed(2) : 0))
+  mfChart.setOption({
+    animation: false,
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['净流入(万元)'] },
+    grid: { left: '10%', right: '8%', top: '12%', bottom: '12%' },
+    xAxis: { type: 'category', data: dates, axisLabel: { hideOverlap: true, fontSize: 10 } },
+    yAxis: { type: 'value', name: '万元' },
+    series: [
+      {
+        name: '净流入(万元)', type: 'bar', data: net,
+        itemStyle: { color: (p) => (p.value >= 0 ? '#ef232a' : '#14b143') },
+      },
+    ],
+  })
 }
 
 onMounted(() => {
@@ -346,5 +590,7 @@ onBeforeUnmount(() => {
   chart && chart.dispose()
   incomeChart && incomeChart.dispose()
   roeChart && roeChart.dispose()
+  pePbChart && pePbChart.dispose()
+  mfChart && mfChart.dispose()
 })
 </script>
