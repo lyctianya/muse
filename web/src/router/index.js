@@ -5,6 +5,7 @@ import ChartView from '../views/ChartView.vue'
 import CompanyView from '../views/CompanyView.vue'
 import WeeksView from '../views/WeeksView.vue'
 import MarketExtraView from '../views/MarketExtraView.vue'
+import SyncView from '../views/SyncView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -15,6 +16,7 @@ const router = createRouter({
     { path: '/company/:symbol', name: 'company', component: CompanyView, props: true },
     { path: '/weeks', name: 'weeks', component: WeeksView },
     { path: '/extra', name: 'extra', component: MarketExtraView },
+    { path: '/sync', name: 'sync', component: SyncView },
   ],
 })
 

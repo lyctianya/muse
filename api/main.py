@@ -20,6 +20,8 @@
                                         /api/margin-detail, /api/stk-limit,
                                         /api/fina-audit, /api/new-share,
                                         /api/managers
+    同步管理  api/routers/sync.py        /api/sync/status, /api/sync/run,
+                                        /api/sync/jobs
     健康检查  api/routers/health.py      /api/health
 
 前端构建产物（web/dist）由 StaticFiles 托管在 / 下；
@@ -34,7 +36,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .deps import WEB_DIST, log
 from .routers import (
-    company, financials, health, holders, market, quotes, tech,
+    company, financials, health, holders, market, quotes, sync, tech,
     tushare, tushare_full,
 )
 
@@ -48,6 +50,7 @@ app.include_router(holders.router)
 app.include_router(tech.router)
 app.include_router(tushare.router)
 app.include_router(tushare_full.router)
+app.include_router(sync.router)
 app.include_router(health.router)
 
 

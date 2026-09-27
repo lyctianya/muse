@@ -20,7 +20,9 @@
           <a-date-picker v-model="toplistDate" value-format="YYYY-MM-DD" @change="loadToplist" />
         </a-space>
         <div v-if="toplist.length">
-          <a-table :data="toplist" :pagination="{ pageSize: 20 }" size="small">
+          <a-table :data="toplist" :pagination="{ pageSize: 20 }" size="small"
+                   row-key="symbol" v-model:expanded-row-keys="toplistExpanded"
+                   @expand="onToplistExpand">
             <template #columns>
               <a-table-column title="代码" data-index="symbol" :width="110" />
               <a-table-column title="名称" data-index="name" :ellipsis="true" />
@@ -45,6 +47,36 @@
                 </template>
               </a-table-column>
               <a-table-column title="上榜理由" data-index="reason" :ellipsis="true" :tooltip="true" />
+            </template>
+            <template #expand-row="{ record }">
+              <div v-if="topinstLoading[record.symbol]" style="padding: 12px; color: #86909c">
+                机构明细加载中…
+              </div>
+              <a-table v-else :data="topinstCache[record.symbol] || []"
+                       :pagination="{ pageSize: 10 }" size="mini">
+                <template #columns>
+                  <a-table-column title="交易日" data-index="trade_date" :width="110" />
+                  <a-table-column title="方向" data-index="side" :width="80">
+                    <template #cell="{ record: r }">
+                      <a-tag size="small" :color="r.side === '买方' ? 'red' : 'green'">{{ r.side }}</a-tag>
+                    </template>
+                  </a-table-column>
+                  <a-table-column title="营业部" data-index="exalter" :ellipsis="true" :tooltip="true" />
+                  <a-table-column title="买入(万)" data-index="buy" :width="120">
+                    <template #cell="{ record: r }">{{ fmtNum(r.buy) }}</template>
+                  </a-table-column>
+                  <a-table-column title="卖出(万)" data-index="sell" :width="120">
+                    <template #cell="{ record: r }">{{ fmtNum(r.sell) }}</template>
+                  </a-table-column>
+                  <a-table-column title="净买入(万)" data-index="net_buy" :width="130">
+                    <template #cell="{ record: r }">
+                      <span :style="{ color: (r.net_buy ?? 0) >= 0 ? '#ef232a' : '#14b143' }">
+                        {{ fmtNum(r.net_buy) }}
+                      </span>
+                    </template>
+                  </a-table-column>
+                </template>
+              </a-table>
             </template>
           </a-table>
         </div>
@@ -169,6 +201,9 @@ const loaded = {}
 const indexBars = ref([])
 const toplist = ref([])
 const toplistDate = ref('')
+const toplistExpanded = ref([])
+const topinstCache = ref({})
+const topinstLoading = ref({})
 const hsgtFlow = ref([])
 const hsgtTop10 = ref([])
 const hsgtDate = ref('')
@@ -245,6 +280,20 @@ async function loadToplist() {
   toplist.value = await getJSON(url)
   if (toplist.value.length && !toplistDate.value) {
     toplistDate.value = toplist.value[0].trade_date
+  }
+}
+
+// 龙虎榜行展开：懒加载该股机构明细（top_inst）
+async function onToplistExpand(record) {
+  const sym = record.symbol
+  if (topinstCache.value[sym] || topinstLoading.value[sym]) return
+  topinstLoading.value[sym] = true
+  try {
+    topinstCache.value[sym] = await getJSON(`/api/top-inst?symbol=${sym}&limit=50`)
+  } catch (e) {
+    Message.error(`机构明细加载失败：${e.message}`)
+  } finally {
+    topinstLoading.value[sym] = false
   }
 }
 
