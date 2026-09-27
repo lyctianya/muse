@@ -98,31 +98,68 @@ def _row_json(row: pd.Series) -> str:
 
 @_util.retry("公司基本信息")
 def _fetch_company_info(symbol: str) -> Optional[dict]:
-    df = ak.stock_individual_info_em(symbol=symbol)
-    if df is None or df.empty:
-        return None
-    # 纵表：列为 [项目, 值] 或 [item, value]
-    cols = list(df.columns)
-    k_col, v_col = cols[0], cols[1]
-    info = {str(r[k_col]).strip(): str(r[v_col]).strip() for _, r in df.iterrows()}
+    # 先试东方财富（字段最全：含 PE/PB/市值）；被掐连接时降级到巨潮资讯
+    try:
+        df = ak.stock_individual_info_em(symbol=symbol)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[%s] 东方财富公司信息失败，改试巨潮资讯：%s", symbol, exc)
+        df = None
+    if df is not None and not df.empty:
+        # 纵表：列为 [项目, 值] 或 [item, value]
+        cols = list(df.columns)
+        k_col, v_col = cols[0], cols[1]
+        info = {str(r[k_col]).strip(): str(r[v_col]).strip()
+                for _, r in df.iterrows()}
 
-    def get(*keys):
+        def get(*keys):
+            for k in keys:
+                if k in info and info[k] not in ("", "--", "-"):
+                    return info[k]
+            return None
+
+        return {
+            "name": get("股票简称"),
+            "industry": get("行业", "所属行业"),
+            "pe": _to_float(get("市盈率-动态", "市盈率")),
+            "pb": _to_float(get("市净率")),
+            "market_cap": _to_float(get("总市值")),
+            "circulating_cap": _to_float(get("流通市值")),
+            "total_shares": _to_float(get("总股本")),
+            "circulating_shares": _to_float(get("流通股")),
+            "list_date": _to_date(get("上市时间", "上市日期")),
+            "data": json.dumps(info, ensure_ascii=False),
+        }
+    # 降级：巨潮资讯公司概况（无 PE/PB/市值，但有行业/上市日期等关键字段）
+    try:
+        df2 = ak.stock_profile_cninfo(symbol=symbol)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[%s] 巨潮资讯公司概况也失败：%s", symbol, exc)
+        return None
+    if df2 is None or df2.empty:
+        return None
+    row = df2.iloc[0]
+
+    def get2(*keys):
         for k in keys:
-            if k in info and info[k] not in ("", "--", "-"):
-                return info[k]
+            if k in df2.columns:
+                v = row[k]
+                if pd.notna(v) and str(v).strip() not in ("", "--", "-"):
+                    return str(v).strip()
         return None
 
+    info2 = {str(k): (None if pd.isna(v) else str(v))
+             for k, v in row.items()}
     return {
-        "name": get("股票简称"),
-        "industry": get("行业", "所属行业"),
-        "pe": _to_float(get("市盈率-动态", "市盈率")),
-        "pb": _to_float(get("市净率")),
-        "market_cap": _to_float(get("总市值")),
-        "circulating_cap": _to_float(get("流通市值")),
-        "total_shares": _to_float(get("总股本")),
-        "circulating_shares": _to_float(get("流通股")),
-        "list_date": _to_date(get("上市时间", "上市日期")),
-        "data": json.dumps(info, ensure_ascii=False),
+        "name": get2("A股简称"),
+        "industry": get2("所属行业"),
+        "pe": None,
+        "pb": None,
+        "market_cap": None,
+        "circulating_cap": None,
+        "total_shares": None,
+        "circulating_shares": None,
+        "list_date": _to_date(get2("上市日期")),
+        "data": json.dumps(info2, ensure_ascii=False),
     }
 
 
