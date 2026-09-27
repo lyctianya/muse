@@ -10,7 +10,7 @@
 ## 目录结构
 
 ```
-stock-data/
+.
 ├── docker-compose.yml        # db / fetcher / api 三服务编排
 ├── .env / .env.example       # 配置（.env 不提交）
 ├── fetcher/                  # 拉取端：Python + APScheduler
@@ -25,6 +25,7 @@ stock-data/
 ├── api/                      # FastAPI 查询接口 + 前端托管
 ├── web/                      # Vue 3 + Vite + Arco Design + ECharts 前端
 ├── merger/                   # 用户侧独立合并工具
+├── scripts/                  # 本机工具（如全量 Parquet 导入）
 └── sql/schema.sql            # 建表语句
 ```
 
@@ -32,41 +33,160 @@ stock-data/
 
 ### 1. 本机原生运行（无 Docker）
 
-前置：Python 3.12、Node 24+、PostgreSQL 18（库 `stocks`、账号 `stockapp`）。
+#### 依赖安装（全部步骤）
+
+**0) 系统前置（本机已装可跳过）**
+
+| 组件 | 版本要求 | 用途 |
+|------|----------|------|
+| Python | 3.12+ | API / fetcher / merger |
+| Node.js | 24+（含 npm） | 前端 `web/` |
+| PostgreSQL | 18 | 行情库 `stocks` |
+
+确认：
 
 ```bash
-cd stock-data
+python --version    # 或 python3 --version
+node --version
+npm --version
+psql --version
+```
 
-# 1) Python 环境
-python3 -m venv .venv
-.venv/bin/pip install -r fetcher/requirements.txt -r api/requirements.txt
+**1) 配置 `.env`**
 
-# 2) 建表（DATABASE_URL 从 .env 读取）
+```bash
+# 项目根目录
+cp .env.example .env
+# 编辑 .env：至少填写 POSTGRES_PASSWORD 与 DATABASE_URL
+# 示例：DATABASE_URL=postgresql://stockapp:你的密码@127.0.0.1:5432/stocks
+```
+
+**2) 创建库与表（PostgreSQL）**
+
+需已有数据库 `stocks`、用户 `stockapp`（密码与 `.env` 一致）。首次：
+
+```bash
+# Linux / macOS（读取 .env 中的 DATABASE_URL）
 set -a && source .env && set +a
 psql "$DATABASE_URL" -f sql/schema.sql
 
-# 3) 前端构建
-cd web && npm install && npm run build && cd ..
+# Windows PowerShell 示例
+$env:PGPASSWORD = 'postgres'
+psql -U stockapp -h 127.0.0.1 -p 5432 -d stocks -f sql/schema.sql
+```
 
-# 4) 启动 API（http://localhost:8000，/api 接口 + 前端页面）
+**3) Python 虚拟环境 + 后端依赖**
+
+在项目根目录安装 **API + fetcher**（日常跑前后端 / 调度器必装）：
+
+```bash
+python -m venv .venv
+
+# Linux / macOS
+.venv/bin/pip install -U pip
+.venv/bin/pip install -r fetcher/requirements.txt -r api/requirements.txt
+
+# Windows PowerShell
+.\.venv\Scripts\python -m pip install -U pip
+.\.venv\Scripts\pip install -r fetcher/requirements.txt -r api/requirements.txt
+```
+
+对应清单：
+
+- [`api/requirements.txt`](api/requirements.txt)：FastAPI、uvicorn、psycopg
+- [`fetcher/requirements.txt`](fetcher/requirements.txt)：AkShare、yfinance、pandas、pyarrow、APScheduler 等
+
+按需另装（非启动前后端所必需）：
+
+```bash
+# 合并 GitHub Releases 周包
+.venv/bin/pip install -r merger/requirements.txt          # Linux / macOS
+.\.venv\Scripts\pip install -r merger/requirements.txt    # Windows
+
+# 导入 sqldata 全量 Parquet（scripts/import_full_parquet.py）
+# 依赖与 merger 重叠，装过 merger 或 fetcher 即可；若最小环境可：
+.venv/bin/pip install "psycopg[binary]" pyarrow pandas
+```
+
+**4) 前端依赖（Node）**
+
+```bash
+cd web
+npm install
+cd ..
+```
+
+安装 `package.json` 中的 Vue 3、Vite、Arco Design、ECharts 等。
+
+可选：构建静态产物，供后端同端口托管：
+
+```bash
+cd web && npm run build && cd ..
+```
+
+**5) 安装结果自检（可选）**
+
+```bash
+# Linux / macOS
+.venv/bin/python -c "import fastapi, uvicorn, psycopg, akshare, pandas; print('python ok')"
+
+# Windows PowerShell
+.\.venv\Scripts\python -c "import fastapi, uvicorn, psycopg, akshare, pandas; print('python ok')"
+
+cd web && npm ls --depth=0 && cd ..
+psql "$DATABASE_URL" -c "\dt"    # 应看到 symbols / daily_bars / ingested_weeks
+```
+
+#### 启动后端（API）
+
+另开终端，在项目根目录：
+
+```bash
+# Linux / macOS
 .venv/bin/python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
 
-# 5) 启动拉取调度器（另开终端）
+# Windows PowerShell
+.\.venv\Scripts\python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+- 地址：`http://localhost:8000`
+- 接口前缀：`/api`（如 `/api/health`、`/api/symbols`、`/api/bars`）
+- 若已执行过 `cd web && npm run build`，同一端口还会托管前端静态页（`web/dist`）
+
+#### 启动前端（开发模式）
+
+后端保持运行，再开一个终端：
+
+```bash
+cd web
+npm run dev
+```
+
+- 地址：`http://localhost:5173`
+- Vite 已将 `/api` 代理到 `http://localhost:8000`，改前端代码可热更新
+
+生产式一体访问（不跑 Vite）：先 `cd web && npm run build`，再只启动后端，浏览器打开 `http://localhost:8000`。
+
+#### 可选：拉取调度器
+
+```bash
+# Linux / macOS
 .venv/bin/python -m fetcher.scheduler
-# 每天 05:30 自动增量拉取；每周一 06:10 自动导出 Parquet 并发布 Release
+
+# Windows PowerShell
+.\.venv\Scripts\python -m fetcher.scheduler
 
 # 手动触发一次（冒烟 / 补跑，不启动定时循环）
 .venv/bin/python -m fetcher.scheduler --run-now daily --market cn
 .venv/bin/python -m fetcher.scheduler --run-now weekly
-
-# 前端开发模式（另开终端，/api 代理到本地 8000）
-cd web && npm run dev   # http://localhost:5173
 ```
+
+每天 05:30 自动增量拉取；每周一 06:10 自动导出 Parquet 并发布 Release。
 
 ### 2. Docker 部署（任意服务器）
 
 ```bash
-cd stock-data
+# 项目根目录
 cp .env.example .env   # 填写 POSTGRES_PASSWORD / GITHUB_TOKEN / GITHUB_REPO
 docker compose up -d --build
 # API: http://<服务器>:8000
