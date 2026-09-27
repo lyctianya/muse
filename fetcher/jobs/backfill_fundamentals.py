@@ -1,22 +1,25 @@
 """A股基本面回填（近 2 年，断点续跑安全）。
 
 用法：
-    # 全量回填（A股现役名单，逐只抓取基本面）
-    python -m fetcher.jobs.backfill_fundamentals
+    # 全量回填（Tushare 主源，需 TUSHARE_TOKEN）
+    python -m fetcher.jobs.backfill_fundamentals --source tushare
+
+    # 东方财富源（默认，无需 token，但可能被限流）
+    python -m fetcher.jobs.backfill_fundamentals --source eastmoney
 
     # 只抓前 N 只（冒烟测试）
-    python -m fetcher.jobs.backfill_fundamentals --limit 5
+    python -m fetcher.jobs.backfill_fundamentals --source tushare --limit 5
 
     # 只抓指定股票
-    python -m fetcher.jobs.backfill_fundamentals --symbols 600519,000001
+    python -m fetcher.jobs.backfill_fundamentals --source tushare --symbols 600519,000001
 
-    # 全市场维度（股权质押快照 + 股东增减持）
-    python -m fetcher.jobs.backfill_fundamentals --market-wide
+    # 校验 Tushare token
+    python -m fetcher.jobs.backfill_fundamentals --source tushare --check-token
 
 特性：
 - 幂等 upsert，重跑安全；单只股票失败不影响其他
 - 进度每 50 只打一次日志
-- 会先应用 _tls_patch（eastmoney 走 curl_cffi 浏览器指纹）
+- eastmoney 源会先应用 _tls_patch（走 curl_cffi 浏览器指纹）
 """
 import argparse
 import logging
@@ -58,13 +61,23 @@ def backfill_market_wide() -> None:
              n1, n2, time.time() - t0)
 
 
-def backfill_symbols(symbols: list) -> None:
+def backfill_symbols(symbols: list, source: str = "eastmoney") -> None:
     total = len(symbols)
     ok = fail = 0
     t0 = time.time()
+    if source == "tushare":
+        from fetcher.sources import tushare_fundamentals as ts_fund
+        # 公司基本信息全市场一次拉取
+        try:
+            ts_fund.upsert_company_info_all()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Tushare 公司基本信息批量拉取失败：%s", exc)
+        fetch_fn = ts_fund.fetch_one
+    else:
+        fetch_fn = cn_fundamentals.fetch_one
     for i, (symbol, name) in enumerate(symbols, start=1):
         try:
-            r = cn_fundamentals.fetch_one(symbol)
+            r = fetch_fn(symbol)
             ok += 1
         except Exception as exc:  # noqa: BLE001
             log.warning("[%s] %s 基本面抓取异常：%s", symbol, name, exc)
@@ -81,7 +94,12 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=0, help="只抓前 N 只（0=全部）")
     ap.add_argument("--symbols", default="", help="指定股票，逗号分隔（如 600519,000001）")
     ap.add_argument("--market-wide", action="store_true",
-                    help="只跑全市场维度（股权质押+股东增减持）")
+                    help="只跑全市场维度（股权质押+股东增减持，仅 eastmoney 源）")
+    ap.add_argument("--source", default="eastmoney",
+                    choices=["eastmoney", "tushare"],
+                    help="数据源：eastmoney（默认）或 tushare（需 TUSHARE_TOKEN）")
+    ap.add_argument("--check-token", action="store_true",
+                    help="校验 Tushare token 有效性后退出")
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -91,7 +109,19 @@ def main() -> None:
     )
     config.require_database_url()
 
+    if args.check_token:
+        from fetcher.sources import tushare_fundamentals as ts_fund
+        r = ts_fund.check_token()
+        log.info("Tushare token 校验结果：%s", r)
+        return
+
+    if args.source == "tushare" and not config.TUSHARE_TOKEN:
+        raise SystemExit("使用 --source tushare 需要配置 TUSHARE_TOKEN 环境变量")
+
     if args.market_wide:
+        if args.source == "tushare":
+            log.warning("--market-wide 暂只支持 eastmoney 源，跳过")
+            return
         backfill_market_wide()
         return
 
@@ -106,10 +136,11 @@ def main() -> None:
             symbols = [(c, n) for c, n in cn.get_symbols()]
     if args.limit:
         symbols = symbols[:args.limit]
-    log.info("待抓取：%d 只", len(symbols))
-    backfill_symbols(symbols)
-    # 全市场维度顺手跑一遍
-    backfill_market_wide()
+    log.info("待抓取：%d 只（数据源=%s）", len(symbols), args.source)
+    backfill_symbols(symbols, source=args.source)
+    # 全市场维度顺手跑一遍（仅 eastmoney 源）
+    if args.source == "eastmoney":
+        backfill_market_wide()
 
 
 if __name__ == "__main__":

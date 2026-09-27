@@ -13,7 +13,8 @@
 #>
 param(
   [int]$Limit = 0,          # 先验证用 -Limit 5；0 = 全量
-  [string]$Symbols = ""     # 指定股票，如 "600519,000001"
+  [string]$Symbols = "",    # 指定股票，如 "600519,000001"
+  [string]$Source = "tushare"  # tushare（需 TUSHARE_TOKEN）或 eastmoney
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,8 +37,8 @@ Step "安装依赖"
 .\.venv\Scripts\python -m pip install -q -r fetcher/requirements.txt
 
 # 4. 回填
-Step "回填基本面（近2年）"
-$args = @("-m", "fetcher.jobs.backfill_fundamentals")
+Step "回填基本面（近2年，数据源=$Source）"
+$args = @("-m", "fetcher.jobs.backfill_fundamentals", "--source", $Source)
 if ($Limit -gt 0) { $args += @("--limit", $Limit) }
 if ($Symbols -ne "") { $args += @("--symbols", $Symbols) }
 .\.venv\Scripts\python @args

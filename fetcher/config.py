@@ -48,6 +48,11 @@ REQUEST_BACKOFF: float = float(os.environ.get("REQUEST_BACKOFF", "2.0"))
 # 相邻请求最小间隔（秒），给免费数据源留余量
 REQUEST_MIN_INTERVAL: float = float(os.environ.get("REQUEST_MIN_INTERVAL", "0.2"))
 
+# Tushare Pro（基本面主数据源，用户稍后提供 token）
+TUSHARE_TOKEN: str = os.environ.get("TUSHARE_TOKEN", "")
+# Tushare 调用间隔（秒），5000 积分档 500 次/分钟，保守一点
+TUSHARE_MIN_INTERVAL: float = float(os.environ.get("TUSHARE_MIN_INTERVAL", "0.15"))
+
 
 def require_database_url() -> str:
     if not DATABASE_URL:

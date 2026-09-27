@@ -7,3 +7,4 @@ psycopg[binary,pool]>=3.1
 apscheduler>=3.10
 requests>=2.31
 curl-cffi>=0.10  # 出口代理 TLS 指纹过滤时，经 _tls_patch 转发 eastmoney/bse.cn
+tushare>=1.4  # Tushare Pro：A股基本面主数据源（需 TUSHARE_TOKEN）
