@@ -5,7 +5,8 @@
 
 数据源：A股（东方财富 via AkShare，主）/ yfinance（校验兜底）；
 港股（腾讯行情 + yfinance）；美股（Stooq 主 + yfinance 备）。
-含退市过滤（剔除退市）、保留 ST/*ST，股票与 ETF 都要。
+名单尽量覆盖现役股票与 ETF（含 ST/*ST）；退市股以后续数据源能识别的为准，
+不作绝对保证。当前全量约 3250 万行（A股 1031 万 / 港股 447 万 / 美股 1775 万）。
 
 ## 目录结构
 
@@ -243,6 +244,24 @@ SELECT symbol, name FROM symbols WHERE market = 'hk' AND name LIKE '%腾讯%';
 加 `manifest.json`。公开仓库下载无需鉴权，直接在 Releases 页面下载，
 或用 merger 工具一键入库（见下）。
 
+### 6b. 全量 Parquet 一次性入库（新库初始化）
+
+从 Release `data-2026-09-26-full` 下载三个 `*-full.parquet`，
+放到项目根的 `sqldata/` 目录（或任意目录，用 `--dir` 指定），然后：
+
+```bash
+# Linux / macOS
+.venv/bin/python scripts/import_full_parquet.py
+# Windows PowerShell
+.\.venv\Scripts\python scripts/import_full_parquet.py
+
+# 只导港股 / 指定目录 / 指定数据库
+.venv/bin/python scripts/import_full_parquet.py --market hk --dir D:\data --db postgresql://user:pass@127.0.0.1:5432/stocks
+```
+
+说明：按 Parquet row group 分批 `COPY` 入暂存表再 `MERGE`，
+主键冲突自动更新；导入前后自动重建索引并回填 `symbols` 表。
+
 ### 7. 合并工具（用户侧，把 Release 数据灌进自己的库）
 
 ```bash
@@ -275,9 +294,10 @@ Parquet 是通用格式，不用本工具也能导入 DuckDB / SQLite 等。
 ## 注意事项
 
 - `.env` 含真实密码，已 gitignore，**绝不提交、绝不写进文档**
-- 全历史回填数据量大（A股+港股+美股约 1400 万行），磁盘不足时不要在小机器上跑
+- 全历史回填数据量大（A股+港股+美股约 3250 万行），磁盘不足时不要在小机器上跑
 - 免费数据源（AkShare/东方财富/腾讯/Stooq/yfinance）有频率限制，
-  代码内置重试 + 退避 + 降级；A股另有前复权逐行校验，坏数据自动切 yfinance
+  代码内置重试 + 退避 + 降级；A股前复权数据做批量合理性校验，
+  坏行比例超 5% 时自动切 yfinance 重抓
 - A股名单优先用 24h 本地缓存（`fetcher/.cache/cn_symbols.json`），
   交易所官网抽风时不阻塞回填
 

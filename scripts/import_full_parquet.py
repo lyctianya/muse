@@ -2,7 +2,13 @@
 
 Usage:
     python scripts/import_full_parquet.py
+    python scripts/import_full_parquet.py --dir release
     python scripts/import_full_parquet.py --db postgresql://stockapp:postgres@127.0.0.1:5432/stocks
+
+Parquet files are read from <project>/sqldata by default (override with --dir):
+    sqldata/cn-2016-2026-full.parquet
+    sqldata/hk-2016-2026-full.parquet
+    sqldata/us-2016-2026-full.parquet
 
 Deps: psycopg[binary], pyarrow, pandas (same as merger)
 """
@@ -30,7 +36,7 @@ if hasattr(sys.stdout, "reconfigure"):
 log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[1]
-SQLDATA = ROOT / "sqldata"
+DEFAULT_DATA_DIR = ROOT / "sqldata"
 
 COPY_COLS = [
     "market", "symbol", "trade_date", "open", "high", "low", "close",
@@ -162,6 +168,9 @@ def main() -> None:
     parser.add_argument("--db", default="", help="DB connection URL")
     parser.add_argument("--market", choices=["cn", "hk", "us"], default=None,
                         help="Import only one market (default: all)")
+    parser.add_argument("--dir", default=str(DEFAULT_DATA_DIR),
+                        help="Directory holding the *-full.parquet files "
+                             "(default: <project>/sqldata)")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -171,6 +180,7 @@ def main() -> None:
     )
 
     db_url = load_database_url(args.db)
+    data_dir = Path(args.dir)
     markets = [args.market] if args.market else list(FILES.keys())
 
     conn = psycopg.connect(db_url)
@@ -182,7 +192,7 @@ def main() -> None:
         log.info("dropped secondary indexes for bulk load")
 
         for market in markets:
-            path = SQLDATA / FILES[market]
+            path = data_dir / FILES[market]
             if not path.exists():
                 raise SystemExit(f"file not found: {path}")
             n = import_parquet(conn, path, market)
