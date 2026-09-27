@@ -42,6 +42,22 @@
         <div ref="chartEl" style="width: 100%; height: 520px"></div>
       </a-card>
 
+      <!-- 财务趋势图 -->
+      <a-row :gutter="16" style="margin-bottom: 16px">
+        <a-col :span="12">
+          <a-card title="营收 / 净利润趋势" size="small">
+            <div v-if="financials.income.length" ref="incomeEl" style="width: 100%; height: 300px"></div>
+            <a-empty v-else description="暂无数据" />
+          </a-card>
+        </a-col>
+        <a-col :span="12">
+          <a-card title="ROE / 毛利率 / 净利率趋势" size="small">
+            <div v-if="financials.indicator.length" ref="roeEl" style="width: 100%; height: 300px"></div>
+            <a-empty v-else description="暂无数据" />
+          </a-card>
+        </a-col>
+      </a-row>
+
       <!-- 财务 / 股东 Tabs -->
       <a-tabs>
         <a-tab-pane key="income" title="利润表">
@@ -113,7 +129,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, computed, h } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, h, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconLeft } from '@arco-design/web-vue/es/icon'
@@ -125,8 +141,12 @@ const stockName = computed(() => route.query.name || '')
 const title = computed(() => `${stockName.value} ${props.symbol}`.trim())
 
 const chartEl = ref(null)
+const incomeEl = ref(null)
+const roeEl = ref(null)
 const loading = ref(false)
 let chart = null
+let incomeChart = null
+let roeChart = null
 
 const today = new Date()
 const fmt = (d) => d.toISOString().slice(0, 10)
@@ -210,6 +230,9 @@ async function loadAll() {
     business.value = biz
     holders.value = hol
     trades.value = trd
+    await nextTick()
+    renderIncomeChart()
+    renderRoeChart()
   } catch (e) {
     Message.error(`加载失败：${e.message}`)
   } finally {
@@ -261,7 +284,57 @@ function renderChart(bars, macd) {
   }, true)
 }
 
-function onResize() { chart && chart.resize() }
+function renderIncomeChart() {
+  if (!incomeEl.value || !financials.value.income.length) return
+  incomeChart && incomeChart.dispose()
+  incomeChart = echarts.init(incomeEl.value)
+  // 按报告期升序
+  const rows = [...financials.value.income].reverse()
+  const dates = rows.map((r) => r.report_date)
+  const revenue = rows.map((r) => (r.revenue != null ? +(r.revenue / 1e8).toFixed(2) : '-'))
+  const profit = rows.map((r) => (r.net_profit != null ? +(r.net_profit / 1e8).toFixed(2) : '-'))
+  incomeChart.setOption({
+    animation: false,
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['营收(亿)', '净利润(亿)'] },
+    grid: { left: '10%', right: '8%', top: '12%', bottom: '12%' },
+    xAxis: { type: 'category', data: dates, axisLabel: { hideOverlap: true, fontSize: 10 } },
+    yAxis: { type: 'value', name: '亿元' },
+    series: [
+      { name: '营收(亿)', type: 'bar', data: revenue, itemStyle: { color: '#165dff' } },
+      { name: '净利润(亿)', type: 'line', data: profit, smooth: true, showSymbol: false,
+        lineStyle: { width: 2 }, itemStyle: { color: '#ef232a' } },
+    ],
+  })
+}
+
+function renderRoeChart() {
+  if (!roeEl.value || !financials.value.indicator.length) return
+  roeChart && roeChart.dispose()
+  roeChart = echarts.init(roeEl.value)
+  const rows = [...financials.value.indicator].reverse()
+  const dates = rows.map((r) => r.report_date)
+  const pick = (k) => rows.map((r) => (r[k] != null ? +Number(r[k]).toFixed(2) : '-'))
+  roeChart.setOption({
+    animation: false,
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['ROE(%)', '毛利率(%)', '净利率(%)'] },
+    grid: { left: '10%', right: '8%', top: '12%', bottom: '12%' },
+    xAxis: { type: 'category', data: dates, axisLabel: { hideOverlap: true, fontSize: 10 } },
+    yAxis: { type: 'value', name: '%' },
+    series: [
+      { name: 'ROE(%)', type: 'line', data: pick('roe'), smooth: true, showSymbol: false, lineStyle: { width: 2 } },
+      { name: '毛利率(%)', type: 'line', data: pick('gross_margin'), smooth: true, showSymbol: false, lineStyle: { width: 1 } },
+      { name: '净利率(%)', type: 'line', data: pick('net_margin'), smooth: true, showSymbol: false, lineStyle: { width: 1 } },
+    ],
+  })
+}
+
+function onResize() {
+  chart && chart.resize()
+  incomeChart && incomeChart.resize()
+  roeChart && roeChart.resize()
+}
 
 onMounted(() => {
   chart = echarts.init(chartEl.value)
@@ -271,5 +344,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
   chart && chart.dispose()
+  incomeChart && incomeChart.dispose()
+  roeChart && roeChart.dispose()
 })
 </script>

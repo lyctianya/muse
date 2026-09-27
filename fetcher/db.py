@@ -116,14 +116,57 @@ ON CONFLICT (market, symbol, trade_date) DO UPDATE SET
 
 def upsert_bars(rows: Iterable[Mapping]) -> int:
     """批量写入日线（幂等）。rows: 每行含 market/symbol/trade_date/open/high/low/
-    close/volume/amount/pct_change/currency。返回写入条数。"""
+    close/volume/amount/pct_change/currency。返回写入条数。
+
+    兜底：pct_change 为空时，用库中前一交易日收盘价补算
+    （增量抓取批次首日无 prev_close 的常见情况）。
+    """
     rows = list(rows)
     if not rows:
         return 0
+    _fill_missing_pct_change(rows)
     with get_pool().connection() as conn:
         with conn.cursor() as cur:
             cur.executemany(_UPSERT_BAR, rows)
     return len(rows)
+
+
+def _fill_missing_pct_change(rows: list) -> None:
+    """原地补算缺失的 pct_change。"""
+    missing = [r for r in rows
+               if r.get("pct_change") is None and r.get("close")]
+    if not missing:
+        return
+    # 按 (market, symbol, 最早缺失日期) 分组，一次查出各自的前收
+    keys = {}
+    for r in missing:
+        k = (r["market"], r["symbol"])
+        td = r["trade_date"]
+        if k not in keys or td < keys[k]:
+            keys[k] = td
+    prev = {}
+    with get_pool().connection() as conn:
+        with conn.cursor() as cur:
+            for (market, symbol), min_date in keys.items():
+                cur.execute(
+                    "SELECT close FROM daily_bars"
+                    " WHERE market = %s AND symbol = %s AND trade_date < %s"
+                    " ORDER BY trade_date DESC LIMIT 1",
+                    (market, symbol, min_date),
+                )
+                row = cur.fetchone()
+                if row and row[0]:
+                    prev[(market, symbol)] = float(row[0])
+    # 按日期排序后链式补算（同 symbol 多天缺失时也能递推）
+    missing.sort(key=lambda r: (r["market"], r["symbol"], r["trade_date"]))
+    last_close: dict = {}
+    for r in missing:
+        k = (r["market"], r["symbol"])
+        pc = last_close.get(k, prev.get(k))
+        close = float(r["close"])
+        if pc:
+            r["pct_change"] = round((close / pc - 1) * 100, 4)
+        last_close[k] = close
 
 
 def get_max_trade_date(market: str, symbol: str) -> Optional[date]:
