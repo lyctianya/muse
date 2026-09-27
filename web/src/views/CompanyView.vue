@@ -270,6 +270,176 @@
           </div>
           <a-empty v-else description="暂无数据" />
         </a-tab-pane>
+        <!-- 新增：Tushare 全量接口（懒加载） -->
+        <a-tab-pane key="mainbz" title="主营业务">
+          <div v-if="mainbz.length">
+            <a-space style="margin-bottom: 12px">
+              <span>报告期：</span>
+              <a-select v-model="mainbzPeriod" style="width: 160px">
+                <a-option v-for="p in mainbzPeriods" :key="p" :value="p">{{ p }}</a-option>
+              </a-select>
+            </a-space>
+            <a-table :data="mainbzFiltered" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="业务项目" data-index="bz_item" :ellipsis="true" :tooltip="true" />
+                <a-table-column title="收入(万元)" data-index="bz_sales">
+                  <template #cell="{ record }">{{ fmtNum(record.bz_sales) }}</template>
+                </a-table-column>
+                <a-table-column title="利润(万元)" data-index="bz_profit">
+                  <template #cell="{ record }">{{ fmtNum(record.bz_profit) }}</template>
+                </a-table-column>
+                <a-table-column title="成本(万元)" data-index="bz_cost">
+                  <template #cell="{ record }">{{ fmtNum(record.bz_cost) }}</template>
+                </a-table-column>
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
+        <a-tab-pane key="company-detail" title="公司详情">
+          <a-descriptions
+            v-if="companyDetail"
+            :column="2"
+            bordered
+            size="small"
+            title="公司详细信息"
+          >
+            <a-descriptions-item label="董事长">{{ companyDetail.chairman || '--' }}</a-descriptions-item>
+            <a-descriptions-item label="总经理">{{ companyDetail.manager || '--' }}</a-descriptions-item>
+            <a-descriptions-item label="董秘">{{ companyDetail.secretary || '--' }}</a-descriptions-item>
+            <a-descriptions-item label="注册资本(万元)">{{ fmtNum(companyDetail.reg_capital) }}</a-descriptions-item>
+            <a-descriptions-item label="成立日期">{{ companyDetail.setup_date || '--' }}</a-descriptions-item>
+            <a-descriptions-item label="省份 / 城市">{{ [companyDetail.province, companyDetail.city].filter(Boolean).join(' / ') || '--' }}</a-descriptions-item>
+            <a-descriptions-item label="员工人数">{{ fmtNum(companyDetail.employees) }}</a-descriptions-item>
+            <a-descriptions-item label="官网">
+              <a-link v-if="companyDetail.website" :href="'http://' + companyDetail.website" target="_blank">{{ companyDetail.website }}</a-link>
+              <span v-else>--</span>
+            </a-descriptions-item>
+            <a-descriptions-item label="电子邮箱">{{ companyDetail.email || '--' }}</a-descriptions-item>
+            <a-descriptions-item label="办公地址">{{ companyDetail.office || '--' }}</a-descriptions-item>
+            <a-descriptions-item label="主营业务" :span="2">{{ companyDetail.main_business || '--' }}</a-descriptions-item>
+            <a-descriptions-item label="经营范围" :span="2">{{ companyDetail.business_scope || '--' }}</a-descriptions-item>
+            <a-descriptions-item label="公司简介" :span="2">{{ companyDetail.introduction || '--' }}</a-descriptions-item>
+          </a-descriptions>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
+        <a-tab-pane key="governance" title="治理">
+          <a-card title="管理层" size="small" style="margin-bottom: 16px">
+            <div v-if="managers.length">
+              <a-table :data="managers" :pagination="{ pageSize: 15 }" size="small">
+                <template #columns>
+                  <a-table-column title="姓名" data-index="name" :width="100" />
+                  <a-table-column title="职务" data-index="title" :ellipsis="true" :tooltip="true" />
+                  <a-table-column title="性别" data-index="gender" :width="70" />
+                  <a-table-column title="学历" data-index="edu" :width="90" />
+                  <a-table-column title="任期" :width="220">
+                    <template #cell="{ record }">
+                      {{ record.begin_date || '--' }} ~ {{ record.end_date || '至今' }}
+                    </template>
+                  </a-table-column>
+                  <a-table-column title="简历">
+                    <template #cell="{ record }">
+                      <a-tooltip v-if="record.resume" :content="record.resume" position="left">
+                        <a-link>查看</a-link>
+                      </a-tooltip>
+                      <span v-else>--</span>
+                    </template>
+                  </a-table-column>
+                </template>
+              </a-table>
+            </div>
+            <a-empty v-else description="暂无数据" />
+          </a-card>
+          <a-card title="审计意见" size="small" style="margin-bottom: 16px">
+            <div v-if="finaAudit.length">
+              <a-table :data="finaAudit" :pagination="{ pageSize: 10 }" size="small">
+                <template #columns>
+                  <a-table-column title="报告期" data-index="end_date" :width="120" />
+                  <a-table-column title="审计结果" data-index="audit_result" :ellipsis="true" :tooltip="true" />
+                  <a-table-column title="审计费用(万元)" data-index="audit_fees">
+                    <template #cell="{ record }">{{ fmtNum(record.audit_fees) }}</template>
+                  </a-table-column>
+                  <a-table-column title="事务所" data-index="audit_agency" :ellipsis="true" :tooltip="true" />
+                </template>
+              </a-table>
+            </div>
+            <a-empty v-else description="暂无数据" />
+          </a-card>
+          <a-card title="曾用名" size="small">
+            <a-timeline v-if="namechange.length">
+              <a-timeline-item
+                v-for="n in [...namechange].reverse()"
+                :key="n.start_date + n.old_name"
+                :label="n.start_date"
+              >
+                {{ n.old_name }}
+                <span style="color: #86909c; margin-left: 8px">{{ n.start_date }} ~ {{ n.end_date || '至今' }}</span>
+              </a-timeline-item>
+            </a-timeline>
+            <a-empty v-else description="暂无数据" />
+          </a-card>
+        </a-tab-pane>
+        <a-tab-pane key="margin-detail" title="两融">
+          <div v-if="marginDetail.length">
+            <a-card title="融资 / 融券余额（近60日，万元）" size="small" style="margin-bottom: 16px">
+              <div ref="marginDetailEl" style="width: 100%; height: 320px"></div>
+            </a-card>
+            <a-table :data="marginDetail" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="交易日" data-index="trade_date" :width="120" />
+                <a-table-column title="融资余额(万)" data-index="rzye">
+                  <template #cell="{ record }">{{ fmtNum(record.rzye) }}</template>
+                </a-table-column>
+                <a-table-column title="融券余额(万)" data-index="rqye">
+                  <template #cell="{ record }">{{ fmtNum(record.rqye) }}</template>
+                </a-table-column>
+                <a-table-column title="融资融券余额(万)" data-index="rzrqye">
+                  <template #cell="{ record }">{{ fmtNum(record.rzrqye) }}</template>
+                </a-table-column>
+                <a-table-column title="融券余量(万股)" data-index="rqyl">
+                  <template #cell="{ record }">{{ fmtNum(record.rqyl) }}</template>
+                </a-table-column>
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
+        <a-tab-pane key="disclosure" title="披露计划">
+          <div v-if="disclosure.length">
+            <a-table :data="disclosure" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="报告期" data-index="end_date" :width="120" />
+                <a-table-column title="公告日" data-index="ann_date" :width="120" />
+                <a-table-column title="预约披露日" data-index="pre_date" :width="120" />
+                <a-table-column title="实际披露日" data-index="actual_date" :width="120" />
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
+        <a-tab-pane key="stk-limit" title="涨跌停">
+          <div v-if="stkLimit.length">
+            <a-table :data="stkLimit" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="交易日" data-index="trade_date" :width="120" />
+                <a-table-column title="昨收" data-index="pre_close">
+                  <template #cell="{ record }">{{ fmtNum(record.pre_close) }}</template>
+                </a-table-column>
+                <a-table-column title="涨停价" data-index="up_limit">
+                  <template #cell="{ record }">
+                    <span style="color: #ef232a">{{ fmtNum(record.up_limit) }}</span>
+                  </template>
+                </a-table-column>
+                <a-table-column title="跌停价" data-index="down_limit">
+                  <template #cell="{ record }">
+                    <span style="color: #14b143">{{ fmtNum(record.down_limit) }}</span>
+                  </template>
+                </a-table-column>
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
       </a-tabs>
     </a-spin>
   </a-card>
@@ -317,6 +487,25 @@ const forecast = ref([])
 const express = ref([])
 const moneyflow = ref([])
 const suspend = ref([])
+// Tushare 全量接口（懒加载）
+const mainbz = ref([])
+const mainbzPeriod = ref('')
+const mainbzPeriods = computed(() =>
+  [...new Set(mainbz.value.map((r) => r.end_date))].sort().reverse()
+)
+const mainbzFiltered = computed(() =>
+  mainbzPeriod.value ? mainbz.value.filter((r) => r.end_date === mainbzPeriod.value) : mainbz.value
+)
+const companyDetail = ref(null)
+const managers = ref([])
+const finaAudit = ref([])
+const namechange = ref([])
+const marginDetail = ref([])
+const disclosure = ref([])
+const stkLimit = ref([])
+const marginDetailEl = ref(null)
+let marginDetailChart = null
+const extraLoaded = {}
 
 // 通用财务表：把 data JSON 的键值对转成行
 const FinTable = {
@@ -520,14 +709,52 @@ function onResize() {
   roeChart && roeChart.resize()
   pePbChart && pePbChart.resize()
   mfChart && mfChart.resize()
+  marginDetailChart && marginDetailChart.resize()
 }
 
-// tab 切换后重算图表尺寸（隐藏 tab 内初始化的图表宽高为 0）
-function onTabChange() {
+// tab 切换后重算图表尺寸（隐藏 tab 内初始化的图表宽高为 0）；新 tab 懒加载数据
+function onTabChange(key) {
   nextTick(() => {
     pePbChart && pePbChart.resize()
     mfChart && mfChart.resize()
+    marginDetailChart && marginDetailChart.resize()
   })
+  if (key) ensureTabLoaded(key)
+}
+
+// 新增 tab 懒加载：只在首次切换到该 tab 时请求
+async function ensureTabLoaded(key) {
+  if (extraLoaded[key]) return
+  extraLoaded[key] = true
+  try {
+    const q = new URLSearchParams({ market: 'cn', symbol: props.symbol })
+    if (key === 'mainbz') {
+      mainbz.value = await getJSON(`/api/mainbz?${q}`)
+      mainbzPeriod.value = mainbzPeriods.value[0] || ''
+    } else if (key === 'company-detail') {
+      companyDetail.value = await getJSON(`/api/company-detail?${q}`)
+    } else if (key === 'governance') {
+      const [mg, au, nc] = await Promise.all([
+        getJSON(`/api/managers?${q}`),
+        getJSON(`/api/fina-audit?${q}`),
+        getJSON(`/api/namechange?${q}`),
+      ])
+      managers.value = mg
+      finaAudit.value = au
+      namechange.value = nc
+    } else if (key === 'margin-detail') {
+      marginDetail.value = await getJSON(`/api/margin-detail?${q}&limit=60`)
+    } else if (key === 'disclosure') {
+      disclosure.value = await getJSON(`/api/disclosure?${q}`)
+    } else if (key === 'stk-limit') {
+      stkLimit.value = await getJSON(`/api/stk-limit?${q}&limit=60`)
+    }
+  } catch (e) {
+    extraLoaded[key] = false
+    Message.error(`加载失败：${e.message}`)
+  }
+  await nextTick()
+  if (key === 'margin-detail') renderMarginDetailChart()
 }
 
 function renderPePbChart() {
@@ -592,5 +819,36 @@ onBeforeUnmount(() => {
   roeChart && roeChart.dispose()
   pePbChart && pePbChart.dispose()
   mfChart && mfChart.dispose()
+  marginDetailChart && marginDetailChart.dispose()
 })
+
+function renderMarginDetailChart() {
+  if (!marginDetailEl.value || !marginDetail.value.length) return
+  marginDetailChart && marginDetailChart.dispose()
+  marginDetailChart = echarts.init(marginDetailEl.value)
+  const rows = [...marginDetail.value].reverse()
+  const dates = rows.map((r) => r.trade_date)
+  const pick = (k) => rows.map((r) => (r[k] != null ? +Number(r[k]).toFixed(2) : '-'))
+  marginDetailChart.setOption({
+    animation: false,
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['融资余额(万)', '融券余额(万)'] },
+    grid: { left: '10%', right: '8%', top: '12%', bottom: '12%' },
+    xAxis: { type: 'category', data: dates, axisLabel: { hideOverlap: true, fontSize: 10 } },
+    yAxis: [
+      { type: 'value', name: '融资(万)' },
+      { type: 'value', name: '融券(万)' },
+    ],
+    series: [
+      {
+        name: '融资余额(万)', type: 'line', data: pick('rzye'), smooth: true, showSymbol: false,
+        lineStyle: { width: 1.5 }, itemStyle: { color: '#ef232a' },
+      },
+      {
+        name: '融券余额(万)', type: 'line', data: pick('rqye'), smooth: true, showSymbol: false,
+        lineStyle: { width: 1.5 }, yAxisIndex: 1, itemStyle: { color: '#165dff' },
+      },
+    ],
+  })
+}
 </script>

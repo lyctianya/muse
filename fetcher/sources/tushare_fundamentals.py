@@ -18,7 +18,7 @@ Tushare 没有的表（main_business 主营构成、holder_trade 增减持）
 import json
 import logging
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 import pandas as pd
@@ -131,11 +131,26 @@ def _row_json(row: pd.Series) -> str:
                        for k, v in row.items()}, ensure_ascii=False)
 
 
-def _period_range() -> tuple:
-    """近 2 年的起止（YYYYMMDD），用于财报按区间拉取。"""
-    end = date.today().strftime("%Y%m%d")
-    start = _cutoff().strftime("%Y%m%d")
-    return start, end
+def _periods() -> list:
+    """近 2 年已结束季度的季度末 YYYYMMDD 列表（倒序，共 8 个）。
+
+    持续回退直到凑满 8 个已结束季度（当前未结束季度自动跳过）。
+    """
+    out = []
+    t = date.today()
+    y, m = t.year, t.month
+    qm = ((m - 1) // 3 + 1) * 3
+    while len(out) < 8:
+        if qm == 12:
+            qe = date(y, 12, 31)
+        else:
+            qe = date(y, qm + 1, 1) - timedelta(days=1)
+        if qe <= t:
+            out.append(qe.strftime("%Y%m%d"))
+        qm -= 3
+        if qm <= 0:
+            qm, y = 12, y - 1
+    return out
 
 
 # ---------------------------------------------------------------- 公司基本信息
@@ -205,12 +220,138 @@ def upsert_company_info_all() -> int:
     return n
 
 
-# ---------------------------------------------------------------- 财务三表 + 指标
+# ---------------------------------------------------------------- 财务三表 + 指标（VIP 批量）
+
+def backfill_fin_statements_vip() -> dict:
+    """用 *_vip 接口按季度批量拉取三表 + 财务指标（8 个季度，约 32 次调用）。"""
+    out = {"income": 0, "balance": 0, "cashflow": 0, "indicator": 0}
+    pool = db.get_pool()
+    periods = _periods()
+    log.info("VIP 批量拉取 %d 个季度：%s", len(periods), periods)
+
+    for period in periods:
+        # 利润表
+        try:
+            df = _call("income_vip", period=period,
+                       fields="ts_code,end_date,total_revenue,n_income_attr_p")
+            if df is not None and not df.empty:
+                with pool.connection() as conn, conn.cursor() as cur:
+                    for _, row in df.iterrows():
+                        symbol = _plain(str(row["ts_code"]))
+                        if len(symbol) != 6:
+                            continue
+                        rd = _to_date(row.get("end_date"))
+                        if not rd:
+                            continue
+                        cur.execute(
+                            """INSERT INTO fin_income
+                               (market, symbol, report_date, revenue, net_profit, data)
+                               VALUES ('cn', %s, %s, %s, %s, %s::jsonb)
+                               ON CONFLICT (market, symbol, report_date) DO UPDATE SET
+                                 revenue=EXCLUDED.revenue, net_profit=EXCLUDED.net_profit,
+                                 data=EXCLUDED.data, updated_at=now()""",
+                            (symbol, rd, _to_float(row.get("total_revenue")),
+                             _to_float(row.get("n_income_attr_p")), _row_json(row)))
+                        out["income"] += 1
+        except Exception as exc:  # noqa: BLE001
+            log.warning("income_vip %s 失败：%s", period, exc)
+
+        # 资产负债表
+        try:
+            df = _call("balancesheet_vip", period=period,
+                       fields="ts_code,end_date,total_assets,total_liab,"
+                              "total_hldr_eqy_exc_min_int")
+            if df is not None and not df.empty:
+                with pool.connection() as conn, conn.cursor() as cur:
+                    for _, row in df.iterrows():
+                        symbol = _plain(str(row["ts_code"]))
+                        if len(symbol) != 6:
+                            continue
+                        rd = _to_date(row.get("end_date"))
+                        if not rd:
+                            continue
+                        cur.execute(
+                            """INSERT INTO fin_balance
+                               (market, symbol, report_date, total_assets, total_liab,
+                                equity, data)
+                               VALUES ('cn', %s, %s, %s, %s, %s, %s::jsonb)
+                               ON CONFLICT (market, symbol, report_date) DO UPDATE SET
+                                 total_assets=EXCLUDED.total_assets,
+                                 total_liab=EXCLUDED.total_liab,
+                                 equity=EXCLUDED.equity,
+                                 data=EXCLUDED.data, updated_at=now()""",
+                            (symbol, rd, _to_float(row.get("total_assets")),
+                             _to_float(row.get("total_liab")),
+                             _to_float(row.get("total_hldr_eqy_exc_min_int")),
+                             _row_json(row)))
+                        out["balance"] += 1
+        except Exception as exc:  # noqa: BLE001
+            log.warning("balancesheet_vip %s 失败：%s", period, exc)
+
+        # 现金流量表
+        try:
+            df = _call("cashflow_vip", period=period,
+                       fields="ts_code,end_date")
+            if df is not None and not df.empty:
+                with pool.connection() as conn, conn.cursor() as cur:
+                    for _, row in df.iterrows():
+                        symbol = _plain(str(row["ts_code"]))
+                        if len(symbol) != 6:
+                            continue
+                        rd = _to_date(row.get("end_date"))
+                        if not rd:
+                            continue
+                        cur.execute(
+                            """INSERT INTO fin_cashflow
+                               (market, symbol, report_date, data)
+                               VALUES ('cn', %s, %s, %s::jsonb)
+                               ON CONFLICT (market, symbol, report_date) DO UPDATE SET
+                                 data=EXCLUDED.data, updated_at=now()""",
+                            (symbol, rd, _row_json(row)))
+                        out["cashflow"] += 1
+        except Exception as exc:  # noqa: BLE001
+            log.warning("cashflow_vip %s 失败：%s", period, exc)
+
+        # 财务指标
+        try:
+            df = _call("fina_indicator_vip", period=period,
+                       fields="ts_code,end_date,roe,grossprofit_margin,"
+                              "netprofit_margin")
+            if df is not None and not df.empty:
+                with pool.connection() as conn, conn.cursor() as cur:
+                    for _, row in df.iterrows():
+                        symbol = _plain(str(row["ts_code"]))
+                        if len(symbol) != 6:
+                            continue
+                        rd = _to_date(row.get("end_date"))
+                        if not rd:
+                            continue
+                        cur.execute(
+                            """INSERT INTO fin_indicator
+                               (market, symbol, report_date, roe, gross_margin,
+                                net_margin, data)
+                               VALUES ('cn', %s, %s, %s, %s, %s, %s::jsonb)
+                               ON CONFLICT (market, symbol, report_date) DO UPDATE SET
+                                 roe=EXCLUDED.roe, gross_margin=EXCLUDED.gross_margin,
+                                 net_margin=EXCLUDED.net_margin,
+                                 data=EXCLUDED.data, updated_at=now()""",
+                            (symbol, rd, _to_float(row.get("roe")),
+                             _to_float(row.get("grossprofit_margin")),
+                             _to_float(row.get("netprofit_margin")),
+                             _row_json(row)))
+                        out["indicator"] += 1
+        except Exception as exc:  # noqa: BLE001
+            log.warning("fina_indicator_vip %s 失败：%s", period, exc)
+
+        log.info("季度 %s 完成，累计 %s", period, out)
+    return out
+
 
 def _upsert_fin_statements(symbol: str) -> dict:
-    """单只股票的三表 + 财务指标。"""
+    """单只股票的三表 + 财务指标（逐只接口，VIP 不可用时降级）。"""
     tsc = _ts_code(symbol)
-    start, end = _period_range()
+    start = _cutoff().strftime("%Y%m%d")
+    end = date.today().strftime("%Y%m%d")
     out = {"income": 0, "balance": 0, "cashflow": 0, "indicator": 0}
     pool = db.get_pool()
 
@@ -429,15 +570,19 @@ def _upsert_pledge(symbol: str) -> int:
 
 # ---------------------------------------------------------------- 入口
 
-def fetch_one(symbol: str) -> dict:
-    """抓取单只股票的全部基本面（近 2 年），返回各分类入库数。"""
+def fetch_one(symbol: str, skip_fin: bool = False) -> dict:
+    """抓取单只股票的全部基本面（近 2 年），返回各分类入库数。
+    skip_fin=True 时跳过三表+指标（VIP 批量已拉过）。"""
     result = {"symbol": symbol}
-    try:
-        r = _upsert_fin_statements(symbol)
-        result["fin_statements"] = r
-    except Exception as exc:  # noqa: BLE001
-        log.warning("[%s] 财务三表+指标失败：%s", symbol, exc)
-        result["fin_statements"] = {}
+    if not skip_fin:
+        try:
+            r = _upsert_fin_statements(symbol)
+            result["fin_statements"] = r
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[%s] 财务三表+指标失败：%s", symbol, exc)
+            result["fin_statements"] = {}
+    else:
+        result["fin_statements"] = {"skipped": "vip_batch"}
     for name, fn in (("top_holders", _upsert_top_holders),
                      ("holder_number", _upsert_holder_number),
                      ("pledge", _upsert_pledge)):

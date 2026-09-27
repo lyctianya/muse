@@ -240,14 +240,15 @@ def _quarters(start: date, end: date) -> list:
     return out
 
 
-def _upsert_forecast(q_start: str, q_end: str) -> int:
+def _upsert_forecast(period: str) -> int:
+    """forecast_vip 按季度批量（5000积分）。"""
     try:
-        df = _call("forecast", start_date=q_start, end_date=q_end,
+        df = _call("forecast_vip", period=period,
                    fields="ts_code,ann_date,end_date,type,p_change_min,"
                           "p_change_max,net_profit_min,net_profit_max,"
                           "last_parent_net")
     except Exception as exc:  # noqa: BLE001
-        log.warning("forecast %s-%s 失败：%s", q_start, q_end, exc)
+        log.warning("forecast_vip %s 失败：%s", period, exc)
         return 0
     if df is None or df.empty:
         return 0
@@ -280,12 +281,13 @@ def _upsert_forecast(q_start: str, q_end: str) -> int:
     return n
 
 
-def _upsert_express(q_start: str, q_end: str) -> int:
+def _upsert_express(period: str) -> int:
+    """express_vip 按季度批量（5000积分）。"""
     try:
-        df = _call("express", start_date=q_start, end_date=q_end,
+        df = _call("express_vip", period=period,
                    fields="ts_code,ann_date,end_date,revenue,net_profit")
     except Exception as exc:  # noqa: BLE001
-        log.warning("express %s-%s 失败：%s", q_start, q_end, exc)
+        log.warning("express_vip %s 失败：%s", period, exc)
         return 0
     if df is None or df.empty:
         return 0
@@ -364,14 +366,17 @@ def backfill_dividend(from_date: str = "") -> None:
 
 
 def backfill_forecast_express(from_date: str = "") -> None:
-    """业绩预告 + 快报，近2年（按季度）。"""
-    start = _to_date(from_date) or _cutoff()
-    qs = _quarters(start, date.today())
-    log.info("forecast/express 待抓取 %d 个季度", len(qs))
+    """业绩预告 + 快报，近2年（VIP 按季度批量，8 次调用）。"""
+    from fetcher.sources.tushare_fundamentals import _periods
+    periods = _periods()
+    if from_date:
+        fd = _to_date(from_date)
+        periods = [p for p in periods if _to_date(p) >= fd]
+    log.info("forecast/express 待抓取 %d 个季度", len(periods))
     t0 = time.time()
     tf = te = 0
-    for qs_, qe in qs:
-        tf += _upsert_forecast(qs_, qe)
-        te += _upsert_express(qs_, qe)
+    for p in periods:
+        tf += _upsert_forecast(p)
+        te += _upsert_express(p)
     log.info("forecast/express 完成：forecast %d 行，express %d 行，%.1fs",
              tf, te, time.time() - t0)

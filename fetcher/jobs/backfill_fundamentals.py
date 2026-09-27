@@ -65,6 +65,7 @@ def backfill_symbols(symbols: list, source: str = "eastmoney") -> None:
     total = len(symbols)
     ok = fail = 0
     t0 = time.time()
+    skip_fin = False
     if source == "tushare":
         from fetcher.sources import tushare_fundamentals as ts_fund
         # 公司基本信息全市场一次拉取
@@ -72,7 +73,14 @@ def backfill_symbols(symbols: list, source: str = "eastmoney") -> None:
             ts_fund.upsert_company_info_all()
         except Exception as exc:  # noqa: BLE001
             log.warning("Tushare 公司基本信息批量拉取失败：%s", exc)
-        fetch_fn = ts_fund.fetch_one
+        # 财务三表 + 指标：VIP 接口按季度批量（8 季度约 32 次调用）
+        try:
+            r = ts_fund.backfill_fin_statements_vip()
+            log.info("VIP 三表+指标批量完成：%s", r)
+            skip_fin = True
+        except Exception as exc:  # noqa: BLE001
+            log.warning("VIP 三表批量失败，逐只拉取时补：%s", exc)
+        fetch_fn = lambda s: ts_fund.fetch_one(s, skip_fin=skip_fin)
     else:
         fetch_fn = cn_fundamentals.fetch_one
     for i, (symbol, name) in enumerate(symbols, start=1):

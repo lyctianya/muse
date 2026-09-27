@@ -4,6 +4,7 @@ import SearchView from '../views/SearchView.vue'
 import ChartView from '../views/ChartView.vue'
 import CompanyView from '../views/CompanyView.vue'
 import WeeksView from '../views/WeeksView.vue'
+import MarketExtraView from '../views/MarketExtraView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -13,6 +14,7 @@ const router = createRouter({
     { path: '/chart/:market/:symbol', name: 'chart', component: ChartView, props: true },
     { path: '/company/:symbol', name: 'company', component: CompanyView, props: true },
     { path: '/weeks', name: 'weeks', component: WeeksView },
+    { path: '/extra', name: 'extra', component: MarketExtraView },
   ],
 })
 
