@@ -23,6 +23,8 @@
     同步管理  api/routers/sync.py        /api/sync/status, /api/sync/run,
                                         /api/sync/jobs
     策略选股  api/routers/screener.py    /api/screener/fields, /api/screener/run
+    估值分位  api/routers/valuation.py   /api/valuation-quantile
+    自选股    api/routers/watchlist.py   /api/watchlist（GET/POST/PUT/DELETE）
     健康检查  api/routers/health.py      /api/health
 
 前端构建产物（web/dist）由 StaticFiles 托管在 / 下；
@@ -38,7 +40,7 @@ from fastapi.staticfiles import StaticFiles
 from .deps import WEB_DIST, log
 from .routers import (
     company, financials, health, holders, market, quotes, screener, sync, tech,
-    tushare, tushare_full,
+    tushare, tushare_full, valuation, watchlist,
 )
 
 app = FastAPI(title="股票数据管道 API", version="0.1.0")
@@ -53,6 +55,8 @@ app.include_router(tushare.router)
 app.include_router(tushare_full.router)
 app.include_router(sync.router)
 app.include_router(screener.router)
+app.include_router(valuation.router)
+app.include_router(watchlist.router)
 app.include_router(health.router)
 
 

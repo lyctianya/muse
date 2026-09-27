@@ -5,6 +5,7 @@
         <a-button shape="circle" @click="$router.back()"><icon-left /></a-button>
         <span>{{ title }}</span>
         <a-tag>{{ marketLabel }}</a-tag>
+        <WatchStar :market="props.market" :symbol="props.symbol" />
       </a-space>
     </template>
     <template #extra>
@@ -30,6 +31,7 @@ import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconLeft } from '@arco-design/web-vue/es/icon'
 import * as echarts from 'echarts'
+import WatchStar from '../components/WatchStar.vue'
 
 const props = defineProps({ market: String, symbol: String })
 const route = useRoute()

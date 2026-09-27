@@ -95,10 +95,14 @@ TABLES = [
      "date_col": "list_date", "module": "full", "only": "new_share"},
     {"key": "managers", "name": "管理层", "group": "全量接口",
      "date_col": None, "module": "full", "only": "managers"},
+    {"key": "share_float", "name": "限售解禁", "group": "全量接口",
+     "date_col": "float_date", "module": "full", "only": "share_float"},
+    {"key": "block_trade", "name": "大宗交易", "group": "全量接口",
+     "date_col": "trade_date", "module": "full", "only": "block_trade"},
 ]
 
 # 按日更新的日期列（最新 < 今天即需更新）；其余日期列按季度判定
-DAILY_COLS = {"trade_date", "suspend_date", "ann_date"}
+DAILY_COLS = {"trade_date", "suspend_date", "ann_date", "float_date"}
 
 
 def _needs_update(date_col: str, latest, rows: int) -> bool:

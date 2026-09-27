@@ -10,6 +10,7 @@
           <a-menu-item key="extra">市场深度</a-menu-item>
           <a-menu-item key="sync">数据更新</a-menu-item>
           <a-menu-item key="screener">策略选股</a-menu-item>
+          <a-menu-item key="watchlist">自选股</a-menu-item>
         </a-menu>
         <div style="margin-left: auto; color: #86909c; font-size: 12px">A股 / 港股 / 美股 · 日线（前复权）</div>
       </div>
@@ -31,11 +32,12 @@ const activeKey = computed(() => {
   if (route.name === 'extra') return 'extra'
   if (route.name === 'sync') return 'sync'
   if (route.name === 'screener') return 'screener'
+  if (route.name === 'watchlist') return 'watchlist'
   if (route.name === 'search' || route.name === 'chart' || route.name === 'company') return 'search'
   return 'home'
 })
 
 function onMenuClick(key) {
-  router.push(key === 'weeks' ? '/weeks' : key === 'extra' ? '/extra' : key === 'sync' ? '/sync' : key === 'screener' ? '/screener' : key === 'search' ? '/search' : '/')
+  router.push(key === 'weeks' ? '/weeks' : key === 'extra' ? '/extra' : key === 'sync' ? '/sync' : key === 'screener' ? '/screener' : key === 'watchlist' ? '/watchlist' : key === 'search' ? '/search' : '/')
 }
 </script>

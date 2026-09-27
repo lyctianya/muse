@@ -1,6 +1,6 @@
 """Tushare Pro 5000积分档全量接口抓取（A股）。
 
-15 张表：
+17 张表：
 - fina_mainbz    主营业务构成（官方，替代东财爬虫）  per-stock
 - company_detail 上市公司详细信息                    批量
 - namechange     股票曾用名                          批量
@@ -16,6 +16,8 @@
 - fina_audit     财务审计意见                        per-stock
 - new_share      IPO新股                             按日期区间
 - managers       上市公司管理层                      per-stock
+- share_float    限售股解禁                          per-stock
+- block_trade    大宗交易                            按交易日
 
 幂等 upsert。市场级/按日表用交易日循环；per-stock 表逐只拉取。
 """
@@ -725,3 +727,104 @@ def backfill_managers() -> None:
             log.info("managers 进度 %d/%d，累计 %d 行，%.1fs",
                      i, len(symbols), total, time.time() - t0)
     log.info("managers 完成：%d 行，%.1fs", total, time.time() - t0)
+
+
+# ---------------------------------------------------------------- 限售解禁（per-stock）
+
+def backfill_share_float() -> None:
+    """share_float：逐只拉取，只保留近2年及未来解禁。约 5500 次调用。"""
+    symbols = _symbols_cn()
+    cutoff = _cutoff()
+    log.info("share_float 待抓取 %d 只", len(symbols))
+    t0 = time.time()
+    total = 0
+    pool = db.get_pool()
+    for i, symbol in enumerate(symbols, 1):
+        try:
+            df = _call("share_float", ts_code=_ts_code(symbol),
+                       fields="ts_code,ann_date,float_date,float_share,"
+                              "float_ratio,holder_name,share_type")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("[%s] share_float 失败：%s", symbol, exc)
+            continue
+        if df is None or df.empty:
+            continue
+        with pool.connection() as conn, conn.cursor() as cur:
+            for _, row in df.iterrows():
+                fd = _to_date(row.get("float_date"))
+                if not fd or fd < cutoff:
+                    continue
+                holder = str(row.get("holder_name") or "").strip()
+                if not holder:
+                    holder = "(未披露)"
+                cur.execute(
+                    """INSERT INTO share_float
+                       (market, symbol, ann_date, float_date, float_share,
+                        float_ratio, holder_name, share_type)
+                       VALUES ('cn', %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (market, symbol, float_date, holder_name)
+                       DO UPDATE SET float_share=EXCLUDED.float_share,
+                         float_ratio=EXCLUDED.float_ratio,
+                         share_type=EXCLUDED.share_type""",
+                    (symbol, _to_date(row.get("ann_date")), fd,
+                     _to_float(row.get("float_share")),
+                     _to_float(row.get("float_ratio")),
+                     holder, str(row.get("share_type") or "")))
+                total += 1
+        if i % 500 == 0:
+            log.info("share_float 进度 %d/%d，累计 %d 行，%.1fs",
+                     i, len(symbols), total, time.time() - t0)
+    log.info("share_float 完成：%d 行，%.1fs", total, time.time() - t0)
+
+
+# ---------------------------------------------------------------- 大宗交易（按交易日）
+
+def _upsert_block_trade(trade_date: str) -> int:
+    try:
+        df = _call("block_trade", trade_date=trade_date,
+                   fields="ts_code,trade_date,price,vol,amount,buyer,seller")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("block_trade %s 失败：%s", trade_date, exc)
+        return 0
+    if df is None or df.empty:
+        return 0
+    td = _to_date(trade_date)
+    pool = db.get_pool()
+    n = 0
+    with pool.connection() as conn, conn.cursor() as cur:
+        for _, row in df.iterrows():
+            symbol = _plain(str(row["ts_code"]))
+            if len(symbol) != 6:
+                continue
+            price = _to_float(row.get("price"))
+            vol = _to_float(row.get("vol"))
+            if not price or not vol:
+                continue
+            cur.execute(
+                """INSERT INTO block_trade
+                   (market, symbol, trade_date, price, vol, amount,
+                    buyer, seller)
+                   VALUES ('cn', %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (market, symbol, trade_date, price, vol)
+                   DO UPDATE SET amount=EXCLUDED.amount,
+                     buyer=EXCLUDED.buyer, seller=EXCLUDED.seller""",
+                (symbol, td, price, vol,
+                 _to_float(row.get("amount")),
+                 str(row.get("buyer") or ""), str(row.get("seller") or "")))
+            n += 1
+    return n
+
+
+def backfill_block_trade(from_date: str = "") -> None:
+    """block_trade：近2年按交易日。约 500 天 × 若干笔。"""
+    start = _to_date(from_date) or _cutoff()
+    days = _trade_days(start, date.today())
+    log.info("block_trade 待抓取 %d 个交易日", len(days))
+    t0 = time.time()
+    total = 0
+    for i, d in enumerate(days, 1):
+        total += _upsert_block_trade(d)
+        if i % 100 == 0:
+            log.info("block_trade 进度 %d/%d，累计 %d 行，%.1fs",
+                     i, len(days), total, time.time() - t0)
+    log.info("block_trade 完成：%d 行，%.1fs", total, time.time() - t0)

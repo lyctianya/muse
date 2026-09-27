@@ -1,4 +1,4 @@
-"""Tushare 全量接口回填（A股 5000积分档，15 张新表）。
+"""Tushare 全量接口回填（A股 5000积分档，17 张表）。
 
 用法：
     # 全部
@@ -44,6 +44,9 @@ JOBS = {
     "mainbz": ("主营业务构成", tf.backfill_mainbz),
     "fina_audit": ("审计意见", tf.backfill_fina_audit),
     "managers": ("管理层", tf.backfill_managers),
+    "share_float": ("限售解禁", tf.backfill_share_float),
+    # 按交易日（中）
+    "block_trade": ("大宗交易", tf.backfill_block_trade),
 }
 
 
@@ -71,7 +74,7 @@ def main() -> None:
         try:
             # 只有支持 from_date 的才传
             if name in ("top_list", "stk_limit", "index", "hsgt_flow",
-                        "hsgt_top10", "margin"):
+                        "hsgt_top10", "margin", "block_trade"):
                 fn(args.from_date)
             else:
                 fn()

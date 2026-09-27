@@ -1,4 +1,4 @@
-"""Tushare 全量接口（5000积分档新增 15 张表）查询端点。"""
+"""Tushare 全量接口（5000积分档新增 17 张表）查询端点。"""
 from datetime import date
 from typing import Optional
 
@@ -424,3 +424,67 @@ def get_managers(
         }
         for r in rows
     ]
+
+
+@router.get("/api/share-float")
+def get_share_float(
+    market: str = Query(default="cn"),
+    symbol: str = Query(description="股票代码，如 600519"),
+):
+    """限售股解禁：按解禁日期倒序，is_future 标记待解禁。"""
+    today = date.today()
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ann_date, float_date, float_share, float_ratio,"
+                " holder_name, share_type FROM share_float"
+                " WHERE market = %s AND symbol = %s"
+                " ORDER BY float_date DESC",
+                (market, symbol),
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "ann_date": r[0].isoformat() if r[0] else None,
+            "float_date": r[1].isoformat(),
+            "float_share": r[2], "float_ratio": r[3],
+            "holder_name": r[4], "share_type": r[5],
+            "is_future": r[1] >= today,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/api/block-trade")
+def get_block_trade(
+    market: str = Query(default="cn"),
+    symbol: str = Query(description="股票代码，如 600519"),
+    limit: int = Query(default=100, le=500),
+):
+    """大宗交易：按日期倒序；premium 为相对当日收盘的溢价率(%)。"""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT b.trade_date, b.price, b.vol, b.amount,
+                          b.buyer, b.seller, d.close
+                   FROM block_trade b
+                   LEFT JOIN daily_bars d
+                     ON d.market = b.market AND d.symbol = b.symbol
+                    AND d.trade_date = b.trade_date
+                   WHERE b.market = %s AND b.symbol = %s
+                   ORDER BY b.trade_date DESC LIMIT %s""",
+                (market, symbol, limit),
+            )
+            rows = cur.fetchall()
+    out = []
+    for r in rows:
+        premium = None
+        if r[1] and r[6]:
+            premium = round((r[1] - r[6]) / r[6] * 100, 2)
+        out.append({
+            "trade_date": r[0].isoformat(), "price": r[1],
+            "vol": r[2], "amount": r[3],
+            "buyer": r[4], "seller": r[5],
+            "close": r[6], "premium": premium,
+        })
+    return out

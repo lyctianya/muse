@@ -5,6 +5,7 @@
         <a-button shape="circle" @click="$router.back()"><icon-left /></a-button>
         <span>{{ title }}</span>
         <a-tag>A股</a-tag>
+        <WatchStar market="cn" :symbol="props.symbol" />
       </a-space>
     </template>
     <template #extra>
@@ -124,6 +125,36 @@
           </a-table>
         </a-tab-pane>
         <a-tab-pane key="daily-basic" title="每日指标">
+          <div v-if="valuation && valuation.found">
+            <a-card title="估值历史分位" size="small" style="margin-bottom: 16px">
+              <a-row :gutter="24">
+                <a-col :span="12" v-for="item in valItems" :key="item.key">
+                  <div style="margin-bottom: 4px">
+                    <span style="font-weight: 600">{{ item.label }}</span>
+                    <span style="font-size: 20px; margin-left: 8px">{{ fmtNum(item.stat.current) }}</span>
+                    <span style="color: var(--color-text-3); margin-left: 8px; font-size: 12px">
+                      处于近 {{ item.stat.span_years }} 年 {{ item.stat.quantile }}% 分位
+                      （样本 {{ item.stat.count }} 个）
+                    </span>
+                  </div>
+                  <div style="position: relative; height: 10px; border-radius: 5px; margin: 8px 0 4px;
+                              background: linear-gradient(90deg, #00b42a, #ffb400 50%, #f53f3f)">
+                    <div :style="{ position: 'absolute', left: item.stat.quantile + '%', top: '-4px',
+                                   width: '3px', height: '18px', background: '#1d2129', borderRadius: '2px',
+                                   transform: 'translateX(-50%)' }"></div>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; font-size: 12px;
+                              color: var(--color-text-3); margin-bottom: 12px">
+                    <span>便宜 ←</span><span>→ 贵</span>
+                  </div>
+                  <div :ref="(el) => (item.key === 'pe' ? valPeEl = el : valPbEl = el)"
+                       style="width: 100%; height: 240px"></div>
+                </a-col>
+              </a-row>
+            </a-card>
+          </div>
+          <a-empty v-if="dailyBasicLoaded && !(valuation && valuation.found)"
+                   description="估值分位：待 Tushare 回填 daily_basic" style="margin-bottom: 16px" />
           <div v-if="dailyBasic.length">
             <a-card title="PE / PB 趋势（近250日）" size="small" style="margin-bottom: 16px">
               <div ref="pePbEl" style="width: 100%; height: 320px"></div>
@@ -440,6 +471,63 @@
           </div>
           <a-empty v-else description="暂无数据" />
         </a-tab-pane>
+        <a-tab-pane key="share-float" title="限售解禁">
+          <div v-if="shareFloat.length">
+            <a-alert v-if="futureFloatStat.shares > 0" type="warning" style="margin-bottom: 12px">
+              未来1年待解禁 {{ fmtYi(futureFloatStat.shares) }} 股，占总股本 {{ futureFloatStat.ratio.toFixed(2) }}%
+            </a-alert>
+            <a-table :data="shareFloat" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="解禁日期" data-index="float_date" :width="120">
+                  <template #cell="{ record }">
+                    {{ record.float_date }}
+                    <a-tag v-if="record.is_future" color="orange" size="small" style="margin-left: 6px">待解禁</a-tag>
+                  </template>
+                </a-table-column>
+                <a-table-column title="解禁数量(股)" data-index="float_share">
+                  <template #cell="{ record }">{{ fmtNum(record.float_share) }}</template>
+                </a-table-column>
+                <a-table-column title="占总股本比(%)" data-index="float_ratio">
+                  <template #cell="{ record }">{{ record.float_ratio != null ? Number(record.float_ratio).toFixed(2) : '-' }}</template>
+                </a-table-column>
+                <a-table-column title="股东名称" data-index="holder_name" :width="200" ellipsis tooltip />
+                <a-table-column title="股份类型" data-index="share_type" :width="140" />
+                <a-table-column title="公告日" data-index="ann_date" :width="120" />
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
+        <a-tab-pane key="block-trade" title="大宗交易">
+          <div v-if="blockTrade.length">
+            <a-table :data="blockTrade" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="日期" data-index="trade_date" :width="110" />
+                <a-table-column title="成交价" data-index="price">
+                  <template #cell="{ record }">{{ fmtNum(record.price) }}</template>
+                </a-table-column>
+                <a-table-column title="溢价率(%)" data-index="premium" :width="110">
+                  <template #cell="{ record }">
+                    <span v-if="record.premium != null"
+                          :style="{ color: record.premium > 0 ? '#ef232a' : record.premium < 0 ? '#14b143' : undefined }">
+                      {{ record.premium > 0 ? '+' : '' }}{{ record.premium.toFixed(2) }}
+                    </span>
+                    <span v-else>-</span>
+                  </template>
+                </a-table-column>
+                <a-table-column title="成交量(万股)" data-index="vol">
+                  <template #cell="{ record }">{{ fmtNum(record.vol) }}</template>
+                </a-table-column>
+                <a-table-column title="成交额(万元)" data-index="amount">
+                  <template #cell="{ record }">{{ fmtNum(record.amount) }}</template>
+                </a-table-column>
+                <a-table-column title="买方" data-index="buyer" :width="160" ellipsis tooltip />
+                <a-table-column title="卖方" data-index="seller" :width="160" ellipsis tooltip />
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
       </a-tabs>
     </a-spin>
   </a-card>
@@ -451,6 +539,7 @@ import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconLeft } from '@arco-design/web-vue/es/icon'
 import * as echarts from 'echarts'
+import WatchStar from '../components/WatchStar.vue'
 
 const props = defineProps({ symbol: String })
 const route = useRoute()
@@ -482,6 +571,19 @@ const holders = ref([])
 const trades = ref([])
 // Tushare 增量数据
 const dailyBasic = ref([])
+const dailyBasicLoaded = ref(false)
+const valuation = ref(null)
+let valPeEl = null
+let valPbEl = null
+let valPeChart = null
+let valPbChart = null
+const valItems = computed(() => {
+  if (!valuation.value || !valuation.value.found) return []
+  return [
+    { key: 'pe', label: 'PE-TTM', stat: valuation.value.pe_ttm },
+    { key: 'pb', label: 'PB', stat: valuation.value.pb },
+  ].filter((i) => i.stat && i.stat.found)
+})
 const dividend = ref([])
 const forecast = ref([])
 const express = ref([])
@@ -503,6 +605,28 @@ const namechange = ref([])
 const marginDetail = ref([])
 const disclosure = ref([])
 const stkLimit = ref([])
+const shareFloat = ref([])
+const blockTrade = ref([])
+// 未来1年待解禁统计
+const futureFloatStat = computed(() => {
+  const oneYearLater = new Date()
+  oneYearLater.setFullYear(oneYearLater.getFullYear() + 1)
+  const cutoff = oneYearLater.toISOString().slice(0, 10)
+  let shares = 0, ratio = 0
+  for (const r of shareFloat.value) {
+    if (r.is_future && r.float_date <= cutoff) {
+      shares += Number(r.float_share) || 0
+      ratio += Number(r.float_ratio) || 0
+    }
+  }
+  return { shares, ratio }
+})
+// 股数转亿股显示
+function fmtYi(v) {
+  if (v == null) return '-'
+  const yi = Number(v) / 1e8
+  return yi >= 0.01 ? `${yi.toFixed(2)}亿` : `${Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`
+}
 const marginDetailEl = ref(null)
 let marginDetailChart = null
 const extraLoaded = {}
@@ -589,15 +713,18 @@ async function loadAll() {
     renderRoeChart()
 
     // Tushare 增量数据（并行拉取，与日期范围无关）
-    const [db250, div, fc, ex, mf, sp] = await Promise.all([
+    const [db250, div, fc, ex, mf, sp, val] = await Promise.all([
       getJSON(`/api/daily-basic?${q}&limit=250`),
       getJSON(`/api/dividend?${q}`),
       getJSON(`/api/forecast?${q}`),
       getJSON(`/api/express?${q}`),
       getJSON(`/api/moneyflow?${q}&limit=60`),
       getJSON(`/api/suspend?${q}`),
+      getJSON(`/api/valuation-quantile?${q}`).catch(() => ({ found: false })),
     ])
     dailyBasic.value = db250
+    dailyBasicLoaded.value = true
+    valuation.value = val
     dividend.value = div
     forecast.value = fc
     express.value = ex
@@ -606,6 +733,7 @@ async function loadAll() {
     await nextTick()
     renderPePbChart()
     renderMfChart()
+    renderValuationCharts()
   } catch (e) {
     Message.error(`加载失败：${e.message}`)
   } finally {
@@ -710,6 +838,8 @@ function onResize() {
   pePbChart && pePbChart.resize()
   mfChart && mfChart.resize()
   marginDetailChart && marginDetailChart.resize()
+  valPeChart && valPeChart.resize()
+  valPbChart && valPbChart.resize()
 }
 
 // tab 切换后重算图表尺寸（隐藏 tab 内初始化的图表宽高为 0）；新 tab 懒加载数据
@@ -718,6 +848,8 @@ function onTabChange(key) {
     pePbChart && pePbChart.resize()
     mfChart && mfChart.resize()
     marginDetailChart && marginDetailChart.resize()
+    valPeChart && valPeChart.resize()
+    valPbChart && valPbChart.resize()
   })
   if (key) ensureTabLoaded(key)
 }
@@ -748,6 +880,10 @@ async function ensureTabLoaded(key) {
       disclosure.value = await getJSON(`/api/disclosure?${q}`)
     } else if (key === 'stk-limit') {
       stkLimit.value = await getJSON(`/api/stk-limit?${q}&limit=60`)
+    } else if (key === 'share-float') {
+      shareFloat.value = await getJSON(`/api/share-float?${q}`)
+    } else if (key === 'block-trade') {
+      blockTrade.value = await getJSON(`/api/block-trade?${q}&limit=100`)
     }
   } catch (e) {
     extraLoaded[key] = false
@@ -782,6 +918,49 @@ function renderPePbChart() {
         lineStyle: { width: 1.5 }, yAxisIndex: 1 },
     ],
   })
+}
+
+function renderValuationCharts() {
+  const rows = [...dailyBasic.value].reverse() // 交易日升序
+  const dates = rows.map((r) => r.trade_date)
+  const draw = (el, key, stat, name) => {
+    if (!el) return null
+    const c = echarts.init(el)
+    const data = rows.map((r) => (r[key] != null && r[key] > 0 ? +Number(r[key]).toFixed(2) : '-'))
+    const qline = (v, label, color) => ({
+      yAxis: v, label: { formatter: label, fontSize: 10, color },
+      lineStyle: { type: 'dashed', color, width: 1 },
+    })
+    c.setOption({
+      animation: false,
+      tooltip: { trigger: 'axis' },
+      grid: { left: '10%', right: '6%', top: '10%', bottom: '14%' },
+      xAxis: { type: 'category', data: dates, axisLabel: { hideOverlap: true, fontSize: 10 } },
+      yAxis: { type: 'value', name },
+      series: [{
+        name, type: 'line', data, smooth: true, showSymbol: false,
+        lineStyle: { width: 1.5 },
+        markLine: {
+          symbol: 'none',
+          data: [
+            qline(stat.q25, '25%', '#00b42a'),
+            qline(stat.median, '中位', '#165dff'),
+            qline(stat.q75, '75%', '#f53f3f'),
+          ],
+        },
+      }],
+    })
+    return c
+  }
+  valPeChart && valPeChart.dispose()
+  valPbChart && valPbChart.dispose()
+  valPeChart = valPbChart = null
+  for (const item of valItems.value) {
+    const el = item.key === 'pe' ? valPeEl : valPbEl
+    const c = draw(el, item.key === 'pe' ? 'pe_ttm' : 'pb', item.stat, item.label)
+    if (item.key === 'pe') valPeChart = c
+    else valPbChart = c
+  }
 }
 
 function renderMfChart() {
@@ -820,6 +999,8 @@ onBeforeUnmount(() => {
   pePbChart && pePbChart.dispose()
   mfChart && mfChart.dispose()
   marginDetailChart && marginDetailChart.dispose()
+  valPeChart && valPeChart.dispose()
+  valPbChart && valPbChart.dispose()
 })
 
 function renderMarginDetailChart() {
