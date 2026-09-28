@@ -48,10 +48,15 @@ REQUEST_BACKOFF: float = float(os.environ.get("REQUEST_BACKOFF", "2.0"))
 # 相邻请求最小间隔（秒），给免费数据源留余量
 REQUEST_MIN_INTERVAL: float = float(os.environ.get("REQUEST_MIN_INTERVAL", "0.2"))
 
-# Tushare Pro（基本面主数据源，用户稍后提供 token）
+# Tushare Pro（基本面主数据源）
+# 直连官方：只设 TUSHARE_TOKEN
+# 走中转站（如 DaoShare/teajoin）：TUSHARE_TOKEN 设为平台 API Key，
+#   TUSHARE_BASE_URL 设为中转站地址（如 https://teajoin.com）
 TUSHARE_TOKEN: str = os.environ.get("TUSHARE_TOKEN", "")
-# Tushare 调用间隔（秒），5000 积分档 500 次/分钟，保守一点
-TUSHARE_MIN_INTERVAL: float = float(os.environ.get("TUSHARE_MIN_INTERVAL", "0.15"))
+TUSHARE_BASE_URL: str = os.environ.get("TUSHARE_BASE_URL", "").rstrip("/")
+# Tushare 调用间隔（秒）。官方 5000 积分档约 500 次/分钟；
+# DaoShare 中转站上限 450 次/分钟、建议间隔 ≥0.2 秒，默认 0.2
+TUSHARE_MIN_INTERVAL: float = float(os.environ.get("TUSHARE_MIN_INTERVAL", "0.2"))
 
 
 def require_database_url() -> str:

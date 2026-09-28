@@ -1,5 +1,6 @@
 # Tushare 全量接口一键回填（本地 PowerShell，5000积分档 15 张新表）
 # 先决条件：.env 配好 DATABASE_URL；$env:TUSHARE_TOKEN=你的token
+# 走中转站（如 DaoShare/teajoin）时：$env:TUSHARE_TOKEN=平台API Key；$env:TUSHARE_BASE_URL="https://teajoin.com"
 param(
   [string]$Only = "all",     # all|company_detail|namechange|new_share|disclosure|
                              # index|hsgt_flow|hsgt_top10|margin|top_list|

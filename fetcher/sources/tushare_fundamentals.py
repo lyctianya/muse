@@ -41,6 +41,11 @@ def _ts():
         import tushare as ts
         ts.set_token(config.TUSHARE_TOKEN)
         _pro = ts.pro_api(timeout=30)
+        _pro._DataApi_token = config.TUSHARE_TOKEN
+        if config.TUSHARE_BASE_URL:
+            # 中转站模式（如 DaoShare/teajoin）：把请求指向中转站地址，
+            # 协议与官方 Tushare 完全兼容，token 用平台 API Key
+            _pro._DataApi__http_url = config.TUSHARE_BASE_URL
     return _pro
 
 

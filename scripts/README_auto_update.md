@@ -10,6 +10,8 @@
 ## 首次设置（只需一次）
 
 1. 确认项目根 `.env` 配好 `DATABASE_URL` 和 `TUSHARE_TOKEN`。
+   走 Tushare 中转站（如 DaoShare/teajoin）时：`TUSHARE_TOKEN` 填平台 API Key，
+   另加一行 `TUSHARE_BASE_URL=https://teajoin.com`。
 2. 右键 PowerShell → **以管理员身份运行**，执行：
    ```powershell
    cd H:\GitHub\muse
