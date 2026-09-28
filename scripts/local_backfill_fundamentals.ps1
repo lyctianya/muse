@@ -1,4 +1,4 @@
-<#Requires -Version 5.1
+﻿<#Requires -Version 5.1
 <#
 .SYNOPSIS
   A股基本面一键回填（本机运行）：建表 -> 回填近2年数据 -> 入库完成。
@@ -18,6 +18,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUTF8 = "1"
+try { chcp 65001 | Out-Null } catch {}
+
 $root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 Set-Location $root
 
@@ -38,10 +44,10 @@ Step "安装依赖"
 
 # 4. 回填
 Step "回填基本面（近2年，数据源=$Source）"
-$args = @("-m", "fetcher.jobs.backfill_fundamentals", "--source", $Source)
-if ($Limit -gt 0) { $args += @("--limit", $Limit) }
-if ($Symbols -ne "") { $args += @("--symbols", $Symbols) }
-.\.venv\Scripts\python @args
+$pyArgs = @("-m", "fetcher.jobs.backfill_fundamentals", "--source", $Source)
+if ($Limit -gt 0) { $pyArgs += @("--limit", $Limit) }
+if ($Symbols -ne "") { $pyArgs += @("--symbols", $Symbols) }
+.\.venv\Scripts\python @pyArgs
 
 Step "完成"
 Write-Host "基本面数据已写入本机数据库，可直接在前端查看（公司详情页 / 行业分布）。" -ForegroundColor Green

@@ -132,6 +132,11 @@ def _cutoff() -> date:
         return t.replace(year=t.year - 2, day=28)
 
 
+def _period_range() -> tuple:
+    """近 2 年区间，返回 (start_date, end_date) YYYYMMDD 字符串。"""
+    return _cutoff().strftime("%Y%m%d"), date.today().strftime("%Y%m%d")
+
+
 def _to_date(v) -> Optional[date]:
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return None
