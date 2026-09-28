@@ -27,6 +27,13 @@ _tls_patch.apply()
 
 log = logging.getLogger("backfill_tushare_full")
 
+
+def _backfill_index_info(from_date: str = "") -> None:
+    tf.backfill_index_basic()
+    tf.backfill_index_weight(from_date)
+    tf.backfill_index_member()
+
+
 JOBS = {
     # 批量/一次性（快）
     "company_detail": ("公司详细信息", tf.backfill_company_detail),
@@ -47,6 +54,15 @@ JOBS = {
     "share_float": ("限售解禁", tf.backfill_share_float),
     # 按交易日（中）
     "block_trade": ("大宗交易", tf.backfill_block_trade),
+    # 15000积分档补全
+    "adj_factor": ("复权因子（近10年）", tf.backfill_adj_factor),
+    "holdertrade": ("股东增减持", tf.backfill_holdertrade),
+    "daily_ts": ("A股日线（近10年）", tf.backfill_daily_ts),
+    "repurchase": ("股票回购", tf.backfill_repurchase),
+    "pledge_detail": ("质押明细", tf.backfill_pledge_detail),
+    "index_info": ("指数基本信息/权重/成分", _backfill_index_info),
+    "cyq_perf": ("每日筹码分布", tf.backfill_cyq_perf),
+    "hk_hold": ("沪深港股通持股", tf.backfill_hk_hold),
 }
 
 
@@ -74,7 +90,8 @@ def main() -> None:
         try:
             # 只有支持 from_date 的才传
             if name in ("top_list", "stk_limit", "index", "hsgt_flow",
-                        "hsgt_top10", "margin", "block_trade"):
+                        "hsgt_top10", "margin", "block_trade",
+                        "daily_ts", "repurchase", "hk_hold", "index_info"):
                 fn(args.from_date)
             else:
                 fn()

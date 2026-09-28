@@ -118,8 +118,14 @@
               <a-table-column title="变动股数" data-index="shares">
                 <template #cell="{ record }">{{ fmtNum(record.shares) }}</template>
               </a-table-column>
+              <a-table-column title="变动比例%" data-index="ratio">
+                <template #cell="{ record }">{{ fmtNum(record.ratio) }}</template>
+              </a-table-column>
               <a-table-column title="均价" data-index="price">
                 <template #cell="{ record }">{{ fmtNum(record.price) }}</template>
+              </a-table-column>
+              <a-table-column title="变动后持股" data-index="after_share">
+                <template #cell="{ record }">{{ fmtNum(record.after_share) }}</template>
               </a-table-column>
             </template>
           </a-table>

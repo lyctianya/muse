@@ -99,6 +99,27 @@ TABLES = [
      "date_col": "float_date", "module": "full", "only": "share_float"},
     {"key": "block_trade", "name": "大宗交易", "group": "全量接口",
      "date_col": "trade_date", "module": "full", "only": "block_trade"},
+    # 15000积分档补全
+    {"key": "adj_factor", "name": "复权因子", "group": "全量接口",
+     "date_col": "trade_date", "module": "full", "only": "adj_factor"},
+    {"key": "holder_trade", "name": "股东增减持", "group": "全量接口",
+     "date_col": "ann_date", "module": "full", "only": "holdertrade"},
+    {"key": "daily_ts", "name": "A股日线(Tushare)", "group": "全量接口",
+     "date_col": "trade_date", "module": "full", "only": "daily_ts"},
+    {"key": "repurchase", "name": "股票回购", "group": "全量接口",
+     "date_col": "ann_date", "module": "full", "only": "repurchase"},
+    {"key": "pledge_detail", "name": "质押明细", "group": "全量接口",
+     "date_col": "ann_date", "module": "full", "only": "pledge_detail"},
+    {"key": "index_basic", "name": "指数基本信息", "group": "全量接口",
+     "date_col": None, "module": "full", "only": "index_info"},
+    {"key": "index_weight", "name": "指数权重", "group": "全量接口",
+     "date_col": "trade_date", "module": "full", "only": "index_info"},
+    {"key": "index_member", "name": "指数成分", "group": "全量接口",
+     "date_col": None, "module": "full", "only": "index_info"},
+    {"key": "cyq_perf", "name": "每日筹码分布", "group": "全量接口",
+     "date_col": "trade_date", "module": "full", "only": "cyq_perf"},
+    {"key": "hk_hold", "name": "沪深港股通持股", "group": "全量接口",
+     "date_col": "trade_date", "module": "full", "only": "hk_hold"},
 ]
 
 # 按日更新的日期列（最新 < 今天即需更新）；其余日期列按季度判定

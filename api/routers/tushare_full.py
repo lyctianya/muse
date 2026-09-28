@@ -488,3 +488,217 @@ def get_block_trade(
             "close": r[6], "premium": premium,
         })
     return out
+
+
+# ================================================================ 15000积分档补全
+
+
+@router.get("/api/adj-factor")
+def get_adj_factor(
+    market: str = Query(default="cn"),
+    symbol: str = Query(description="股票代码，如 600519"),
+    limit: int = Query(default=250, le=3000),
+):
+    """复权因子：按日期倒序。"""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT trade_date, adj_factor FROM adj_factor"
+                " WHERE market = %s AND symbol = %s"
+                " ORDER BY trade_date DESC LIMIT %s",
+                (market, symbol, limit),
+            )
+            rows = cur.fetchall()
+    return [
+        {"trade_date": r[0].isoformat(), "adj_factor": r[1]}
+        for r in rows
+    ]
+
+
+@router.get("/api/repurchase")
+def get_repurchase(
+    market: str = Query(default="cn"),
+    symbol: str = Query(description="股票代码，如 600519"),
+    limit: int = Query(default=50, le=200),
+):
+    """股票回购：按公告日期倒序。"""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ann_date, end_date, proc, exp_date, vol, amount,"
+                " price_low, price_high FROM repurchase"
+                " WHERE market = %s AND symbol = %s"
+                " ORDER BY ann_date DESC LIMIT %s",
+                (market, symbol, limit),
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "ann_date": r[0].isoformat() if r[0] else None,
+            "end_date": r[1].isoformat() if r[1] else None,
+            "proc": r[2],
+            "exp_date": r[3].isoformat() if r[3] else None,
+            "vol": r[4], "amount": r[5],
+            "price_low": r[6], "price_high": r[7],
+        }
+        for r in rows
+    ]
+
+
+@router.get("/api/pledge-detail")
+def get_pledge_detail(
+    market: str = Query(default="cn"),
+    symbol: str = Query(description="股票代码，如 600519"),
+    limit: int = Query(default=100, le=500),
+):
+    """股权质押明细：按公告日期倒序。"""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ann_date, holder_name, pledge_amount, start_date,"
+                " end_date, is_release, release_date FROM pledge_detail"
+                " WHERE market = %s AND symbol = %s"
+                " ORDER BY ann_date DESC LIMIT %s",
+                (market, symbol, limit),
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "ann_date": r[0].isoformat() if r[0] else None,
+            "holder_name": r[1], "pledge_amount": r[2],
+            "start_date": r[3].isoformat() if r[3] else None,
+            "end_date": r[4].isoformat() if r[4] else None,
+            "is_release": r[5],
+            "release_date": r[6].isoformat() if r[6] else None,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/api/index-basic")
+def get_index_basic():
+    """指数基本信息列表。"""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ts_code, name, market, publisher, index_type,"
+                " category, base_date, base_point, list_date"
+                " FROM index_basic ORDER BY ts_code")
+            rows = cur.fetchall()
+    return [
+        {
+            "ts_code": r[0], "name": r[1], "market": r[2],
+            "publisher": r[3], "index_type": r[4], "category": r[5],
+            "base_date": r[6].isoformat() if r[6] else None,
+            "base_point": r[7],
+            "list_date": r[8].isoformat() if r[8] else None,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/api/index-weight")
+def get_index_weight(
+    index_code: str = Query(description="指数代码，如 000300.SH"),
+    trade_date: Optional[str] = Query(default=None,
+                                      description="交易日 YYYY-MM-DD，默认最新"),
+    limit: int = Query(default=300, le=2000),
+):
+    """指数权重：默认最新交易日，按权重倒序。"""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            if not trade_date:
+                cur.execute(
+                    "SELECT max(trade_date) FROM index_weight"
+                    " WHERE index_code = %s", (index_code,))
+                mx = cur.fetchone()[0]
+                trade_date = mx.isoformat() if mx else None
+            if not trade_date:
+                return []
+            cur.execute(
+                "SELECT con_code, trade_date, weight FROM index_weight"
+                " WHERE index_code = %s AND trade_date = %s"
+                " ORDER BY weight DESC NULLS LAST LIMIT %s",
+                (index_code, trade_date, limit),
+            )
+            rows = cur.fetchall()
+    return [
+        {"con_code": r[0], "trade_date": r[1].isoformat(), "weight": r[2]}
+        for r in rows
+    ]
+
+
+@router.get("/api/index-member")
+def get_index_member(
+    index_code: str = Query(description="指数代码，如 000300.SH"),
+):
+    """指数成分股（最新）。"""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT con_code, con_name, in_date, out_date, is_new"
+                " FROM index_member WHERE index_code = %s"
+                " ORDER BY con_code",
+                (index_code,),
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "con_code": r[0], "con_name": r[1],
+            "in_date": r[2].isoformat() if r[2] else None,
+            "out_date": r[3].isoformat() if r[3] else None,
+            "is_new": r[4],
+        }
+        for r in rows
+    ]
+
+
+@router.get("/api/cyq")
+def get_cyq(
+    market: str = Query(default="cn"),
+    symbol: str = Query(description="股票代码，如 600519"),
+    limit: int = Query(default=250, le=1000),
+):
+    """每日筹码分布：按日期倒序。"""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT trade_date, his_low, his_high, cost_5pct, cost_15pct,"
+                " cost_50pct, cost_85pct, cost_95pct, weight_avg, winner_rate"
+                " FROM cyq_perf WHERE market = %s AND symbol = %s"
+                " ORDER BY trade_date DESC LIMIT %s",
+                (market, symbol, limit),
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "trade_date": r[0].isoformat(),
+            "his_low": r[1], "his_high": r[2],
+            "cost_5pct": r[3], "cost_15pct": r[4], "cost_50pct": r[5],
+            "cost_85pct": r[6], "cost_95pct": r[7],
+            "weight_avg": r[8], "winner_rate": r[9],
+        }
+        for r in rows
+    ]
+
+
+@router.get("/api/hk-hold")
+def get_hk_hold(
+    market: str = Query(default="cn"),
+    symbol: str = Query(description="股票代码，如 600519"),
+    limit: int = Query(default=250, le=1000),
+):
+    """沪深港股通持股明细：按日期倒序。"""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT trade_date, vol, ratio FROM hk_hold"
+                " WHERE market = %s AND symbol = %s"
+                " ORDER BY trade_date DESC LIMIT %s",
+                (market, symbol, limit),
+            )
+            rows = cur.fetchall()
+    return [
+        {"trade_date": r[0].isoformat(), "vol": r[1], "ratio": r[2]}
+        for r in rows
+    ]

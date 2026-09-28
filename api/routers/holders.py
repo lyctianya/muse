@@ -87,22 +87,28 @@ def get_holder_trades(
     symbol: str = Query(description="股票代码，如 600519"),
     limit: int = Query(default=100, le=500),
 ):
-    """股东增减持记录。"""
+    """股东增减持记录（Tushare stk_holdertrade）。"""
     with _conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT holder_name, trade_type, trade_date, shares, price,"
-                " amount, ratio FROM holder_trade"
+                "SELECT holder_name, holder_type, in_de, ann_date,"
+                " change_vol, change_ratio, after_share, after_ratio,"
+                " avg_price, begin_date, close_date FROM holder_trade"
                 " WHERE market = %s AND symbol = %s"
-                " ORDER BY trade_date DESC LIMIT %s",
+                " ORDER BY ann_date DESC LIMIT %s",
                 (market, symbol, limit),
             )
             rows = cur.fetchall()
     return [
         {
-            "holder_name": r[0], "trade_type": r[1],
-            "trade_date": r[2].isoformat() if r[2] else None,
-            "shares": r[3], "price": r[4], "amount": r[5], "ratio": r[6],
+            "holder_name": r[0], "holder_type": r[1],
+            "trade_type": "增持" if r[2] == "IN" else ("减持" if r[2] == "DE" else r[2]),
+            "ann_date": r[3].isoformat() if r[3] else None,
+            "trade_date": r[3].isoformat() if r[3] else None,
+            "shares": r[4], "ratio": r[5],
+            "after_share": r[6], "after_ratio": r[7], "price": r[8],
+            "begin_date": r[9].isoformat() if r[9] else None,
+            "close_date": r[10].isoformat() if r[10] else None,
         }
         for r in rows
     ]
