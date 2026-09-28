@@ -32,12 +32,42 @@ _pro = None
 _last_call = 0.0
 
 
+_BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36")
+_relay_patched = False
+
+
+def _patch_relay_headers() -> None:
+    """中转站的 WAF 会拦截无浏览器头的请求，这里给发往中转站的
+    requests.post 补上浏览器头。仅在 TUSHARE_BASE_URL 启用时生效，
+    直连官方 API 时不做任何改动。"""
+    global _relay_patched
+    if _relay_patched or not config.TUSHARE_BASE_URL:
+        return
+    import requests as _requests
+    _orig_post = _requests.post
+    base = config.TUSHARE_BASE_URL
+
+    def _post(url, *args, **kwargs):
+        if str(url).startswith(base):
+            headers = dict(kwargs.pop("headers", None) or {})
+            headers.setdefault("User-Agent", _BROWSER_UA)
+            headers.setdefault("Accept", "application/json")
+            headers.setdefault("Referer", base + "/guide")
+            kwargs["headers"] = headers
+        return _orig_post(url, *args, **kwargs)
+
+    _requests.post = _post
+    _relay_patched = True
+
+
 def _ts():
     """Tushare Pro 客户端单例。"""
     global _pro
     if _pro is None:
         if not config.TUSHARE_TOKEN:
             raise RuntimeError("未配置 TUSHARE_TOKEN 环境变量")
+        _patch_relay_headers()
         import tushare as ts
         ts.set_token(config.TUSHARE_TOKEN)
         _pro = ts.pro_api(timeout=30)
