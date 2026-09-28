@@ -19,6 +19,7 @@ import pandas as pd
 from fetcher import config, db
 from fetcher.sources.tushare_fundamentals import (
     _call, _cutoff, _plain, _to_date, _to_float, _row_json,
+    _incremental_start,
 )
 
 log = logging.getLogger(__name__)
@@ -319,7 +320,7 @@ def _upsert_express(period: str) -> int:
 
 def backfill_daily_basic(from_date: str = "") -> None:
     """每日指标，近10年。"""
-    start = _to_date(from_date) or TEN_YEARS_AGO
+    start = _incremental_start(from_date, "daily_basic", "trade_date", TEN_YEARS_AGO)
     days = _trade_days(start, date.today())
     log.info("daily_basic 待抓取 %d 个交易日（%s 起）", len(days), start)
     t0 = time.time()
@@ -335,7 +336,7 @@ def backfill_daily_basic(from_date: str = "") -> None:
 
 def backfill_moneyflow_suspend(from_date: str = "") -> None:
     """资金流向 + 停复牌，近2年。"""
-    start = _to_date(from_date) or _cutoff()
+    start = _incremental_start(from_date, "moneyflow", "trade_date", _cutoff())
     days = _trade_days(start, date.today())
     log.info("moneyflow/suspend 待抓取 %d 个交易日（%s 起）", len(days), start)
     t0 = time.time()
@@ -352,7 +353,7 @@ def backfill_moneyflow_suspend(from_date: str = "") -> None:
 
 def backfill_dividend(from_date: str = "") -> None:
     """分红送股，近2年（按公告日遍历交易日）。"""
-    start = _to_date(from_date) or _cutoff()
+    start = _incremental_start(from_date, "dividend", "ann_date", _cutoff())
     days = _trade_days(start, date.today())
     log.info("dividend 待抓取 %d 个公告日", len(days))
     t0 = time.time()

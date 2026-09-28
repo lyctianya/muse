@@ -55,13 +55,13 @@ JOBS = {
     # 按交易日（中）
     "block_trade": ("大宗交易", tf.backfill_block_trade),
     # 15000积分档补全
-    "adj_factor": ("复权因子（近10年）", tf.backfill_adj_factor),
-    "holdertrade": ("股东增减持", tf.backfill_holdertrade),
+    "adj_factor": ("复权因子（近10年，按日）", tf.backfill_adj_factor),
+    "holdertrade": ("股东增减持（按公告日）", tf.backfill_holdertrade),
     "daily_ts": ("A股日线（近10年）", tf.backfill_daily_ts),
     "repurchase": ("股票回购", tf.backfill_repurchase),
-    "pledge_detail": ("质押明细", tf.backfill_pledge_detail),
+    "pledge_detail": ("质押明细（逐只）", tf.backfill_pledge_detail),
     "index_info": ("指数基本信息/权重/成分", _backfill_index_info),
-    "cyq_perf": ("每日筹码分布", tf.backfill_cyq_perf),
+    "cyq_perf": ("每日筹码分布（逐只）", tf.backfill_cyq_perf),
     "hk_hold": ("沪深港股通持股", tf.backfill_hk_hold),
 }
 
@@ -70,7 +70,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Tushare 全量接口回填")
     ap.add_argument("--only", choices=list(JOBS) + ["all"], default="all")
     ap.add_argument("--from-date", default="",
-                    help="起始日期 YYYY-MM-DD（断点续跑）")
+                    help="强制起始日期 YYYY-MM-DD；默认按库内 max(日期) 增量续跑")
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -91,7 +91,8 @@ def main() -> None:
             # 只有支持 from_date 的才传
             if name in ("top_list", "stk_limit", "index", "hsgt_flow",
                         "hsgt_top10", "margin", "block_trade",
-                        "daily_ts", "repurchase", "hk_hold", "index_info"):
+                        "daily_ts", "repurchase", "hk_hold", "index_info",
+                        "adj_factor", "holdertrade", "pledge_detail"):
                 fn(args.from_date)
             else:
                 fn()

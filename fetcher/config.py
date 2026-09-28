@@ -57,6 +57,8 @@ TUSHARE_BASE_URL: str = os.environ.get("TUSHARE_BASE_URL", "").rstrip("/")
 # Tushare 调用间隔（秒）。官方 5000 积分档约 500 次/分钟；
 # DaoShare 中转站上限 450 次/分钟、建议间隔 ≥0.2 秒，默认 0.2
 TUSHARE_MIN_INTERVAL: float = float(os.environ.get("TUSHARE_MIN_INTERVAL", "0.2"))
+# Tushare 并发线程数（共享限流；网络 RTT > 间隔时能叠请求加速）
+TUSHARE_WORKERS: int = int(os.environ.get("TUSHARE_WORKERS", "6"))
 
 
 def require_database_url() -> str:

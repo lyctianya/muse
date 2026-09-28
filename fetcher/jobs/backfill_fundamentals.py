@@ -66,6 +66,7 @@ def backfill_symbols(symbols: list, source: str = "eastmoney") -> None:
     ok = fail = 0
     t0 = time.time()
     skip_fin = False
+    skip_main = False
     if source == "tushare":
         from fetcher.sources import tushare_fundamentals as ts_fund
         # 公司基本信息全市场一次拉取
@@ -80,12 +81,55 @@ def backfill_symbols(symbols: list, source: str = "eastmoney") -> None:
             skip_fin = True
         except Exception as exc:  # noqa: BLE001
             log.warning("VIP 三表批量失败，逐只拉取时补：%s", exc)
-        fetch_fn = lambda s: ts_fund.fetch_one(s, skip_fin=skip_fin)
-    else:
-        fetch_fn = cn_fundamentals.fetch_one
+        # 主营构成：VIP 按季度批量（替代东财逐只，~10s/只）
+        try:
+            n = ts_fund.backfill_main_business_vip()
+            log.info("VIP 主营构成批量完成：%d 行", n)
+            skip_main = True
+        except Exception as exc:  # noqa: BLE001
+            log.warning("VIP 主营构成批量失败，将跳过东财补充（请检查积分/中转）：%s",
+                        exc)
+            skip_main = True  # 仍不走东财，避免拖死全流程
+        # 股东类：只补库内尚未追上的股票，并并发
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from fetcher.sources.tushare_fundamentals import _symbol_max_dates
+        from datetime import timedelta
+        max_holders = _symbol_max_dates("top_holders", "report_date")
+        # 近两个季度内已有十大股东 → 跳过该股
+        fresh_cut = date.today() - timedelta(days=180)
+        todo = [(s, n) for s, n in symbols
+                if not max_holders.get(s) or max_holders[s] < fresh_cut]
+        log.info("股东/户数/质押增量：共 %d 只，跳过已有 %d，待拉 %d，workers=%d",
+                 total, total - len(todo), len(todo), config.TUSHARE_WORKERS)
+
+        def _one(pair):
+            sym, _name = pair
+            return ts_fund.fetch_one(sym, skip_fin=True, skip_main_business=True)
+
+        workers = max(1, int(config.TUSHARE_WORKERS))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futs = {pool.submit(_one, p): p for p in todo}
+            done = 0
+            for fut in as_completed(futs):
+                done += 1
+                try:
+                    fut.result()
+                    ok += 1
+                except Exception as exc:  # noqa: BLE001
+                    sym, name = futs[fut]
+                    log.warning("[%s] %s 基本面抓取异常：%s", sym, name, exc)
+                    fail += 1
+                if done % 50 == 0 or done == len(todo):
+                    log.info("进度 %d/%d（成功 %d，失败 %d），耗时 %.1fs",
+                             done, len(todo), ok, fail, time.time() - t0)
+        log.info("基本面回填完成：待拉 %d，成功 %d，失败 %d，总耗时 %.1fs",
+                 len(todo), ok, fail, time.time() - t0)
+        return
+
+    fetch_fn = cn_fundamentals.fetch_one
     for i, (symbol, name) in enumerate(symbols, start=1):
         try:
-            r = fetch_fn(symbol)
+            fetch_fn(symbol)
             ok += 1
         except Exception as exc:  # noqa: BLE001
             log.warning("[%s] %s 基本面抓取异常：%s", symbol, name, exc)

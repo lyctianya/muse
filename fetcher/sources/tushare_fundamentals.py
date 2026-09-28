@@ -17,6 +17,7 @@ Tushare 没有的表（main_business 主营构成、holder_trade 增减持）
 """
 import json
 import logging
+import threading
 import time
 from datetime import date, timedelta
 from typing import Optional
@@ -30,11 +31,14 @@ log = logging.getLogger(__name__)
 
 _pro = None
 _last_call = 0.0
+_call_lock = threading.Lock()
+_ts_lock = threading.Lock()
 
 
 _BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36")
 _relay_patched = False
+_relay_lock = threading.Lock()
 
 
 def _patch_relay_headers() -> None:
@@ -42,49 +46,55 @@ def _patch_relay_headers() -> None:
     requests.post 补上浏览器头。仅在 TUSHARE_BASE_URL 启用时生效，
     直连官方 API 时不做任何改动。"""
     global _relay_patched
-    if _relay_patched or not config.TUSHARE_BASE_URL:
-        return
-    import requests as _requests
-    _orig_post = _requests.post
-    base = config.TUSHARE_BASE_URL
+    with _relay_lock:
+        if _relay_patched or not config.TUSHARE_BASE_URL:
+            return
+        import requests as _requests
+        _orig_post = _requests.post
+        base = config.TUSHARE_BASE_URL
 
-    def _post(url, *args, **kwargs):
-        if str(url).startswith(base):
-            headers = dict(kwargs.pop("headers", None) or {})
-            headers.setdefault("User-Agent", _BROWSER_UA)
-            headers.setdefault("Accept", "application/json")
-            headers.setdefault("Referer", base + "/guide")
-            kwargs["headers"] = headers
-        return _orig_post(url, *args, **kwargs)
+        def _post(url, *args, **kwargs):
+            if str(url).startswith(base):
+                headers = dict(kwargs.pop("headers", None) or {})
+                headers.setdefault("User-Agent", _BROWSER_UA)
+                headers.setdefault("Accept", "application/json")
+                headers.setdefault("Referer", base + "/guide")
+                kwargs["headers"] = headers
+            return _orig_post(url, *args, **kwargs)
 
-    _requests.post = _post
-    _relay_patched = True
+        _requests.post = _post
+        _relay_patched = True
 
 
 def _ts():
     """Tushare Pro 客户端单例。"""
     global _pro
     if _pro is None:
-        if not config.TUSHARE_TOKEN:
-            raise RuntimeError("未配置 TUSHARE_TOKEN 环境变量")
-        _patch_relay_headers()
-        import tushare as ts
-        ts.set_token(config.TUSHARE_TOKEN)
-        _pro = ts.pro_api(timeout=30)
-        _pro._DataApi_token = config.TUSHARE_TOKEN
-        if config.TUSHARE_BASE_URL:
-            # 中转站模式（如 DaoShare/teajoin）：把请求指向中转站地址，
-            # 协议与官方 Tushare 完全兼容，token 用平台 API Key
-            _pro._DataApi__http_url = config.TUSHARE_BASE_URL
+        with _ts_lock:
+            if _pro is None:
+                if not config.TUSHARE_TOKEN:
+                    raise RuntimeError("未配置 TUSHARE_TOKEN 环境变量")
+                _patch_relay_headers()
+                import tushare as ts
+                ts.set_token(config.TUSHARE_TOKEN)
+                pro = ts.pro_api(timeout=30)
+                pro._DataApi_token = config.TUSHARE_TOKEN
+                if config.TUSHARE_BASE_URL:
+                    # 中转站模式（如 DaoShare/teajoin）：把请求指向中转站地址，
+                    # 协议与官方 Tushare 完全兼容，token 用平台 API Key
+                    pro._DataApi__http_url = config.TUSHARE_BASE_URL
+                _pro = pro
     return _pro
 
 
 def _throttle() -> None:
+    """线程安全限流：控制请求启动间隔，允许多请求同时在途。"""
     global _last_call
-    wait = config.TUSHARE_MIN_INTERVAL - (time.time() - _last_call)
-    if wait > 0:
-        time.sleep(wait)
-    _last_call = time.time()
+    with _call_lock:
+        wait = config.TUSHARE_MIN_INTERVAL - (time.time() - _last_call)
+        if wait > 0:
+            time.sleep(wait)
+        _last_call = time.time()
 
 
 def _call(api_name: str, **params) -> pd.DataFrame:
@@ -135,6 +145,51 @@ def _cutoff() -> date:
 def _period_range() -> tuple:
     """近 2 年区间，返回 (start_date, end_date) YYYYMMDD 字符串。"""
     return _cutoff().strftime("%Y%m%d"), date.today().strftime("%Y%m%d")
+
+
+def _incremental_start(
+    from_date: str,
+    table: str,
+    date_col: str,
+    default: date,
+) -> date:
+    """解析增量起点：显式 from_date > 库内 max(date_col) > default。
+
+    有库内日期时从该日重拉（覆盖当日更新），避免漏数。
+    """
+    explicit = _to_date(from_date)
+    if explicit:
+        return explicit
+    # 仅允许已知标识符，防止拼接注入
+    if not table.replace("_", "").isalnum() or not date_col.replace("_", "").isalnum():
+        return default
+    try:
+        with db.get_pool().connection() as conn, conn.cursor() as cur:
+            cur.execute(f"SELECT max({date_col}) FROM {table}")  # noqa: S608
+            row = cur.fetchone()
+            if row and row[0]:
+                log.info("%s 增量：库内 max(%s)=%s", table, date_col, row[0])
+                return row[0]
+    except Exception as exc:  # noqa: BLE001
+        log.warning("查询 %s.%s 失败，回退默认起点 %s：%s",
+                    table, date_col, default, exc)
+    return default
+
+
+def _symbol_max_dates(table: str, date_col: str) -> dict:
+    """返回 {symbol: max(date_col)}，表为空则 {}。"""
+    if not table.replace("_", "").isalnum() or not date_col.replace("_", "").isalnum():
+        return {}
+    try:
+        with db.get_pool().connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT symbol, max({date_col}) FROM {table} "  # noqa: S608
+                f"WHERE market='cn' GROUP BY symbol"
+            )
+            return {r[0]: r[1] for r in cur.fetchall() if r[1] is not None}
+    except Exception as exc:  # noqa: BLE001
+        log.warning("查询 %s 分股票 max(%s) 失败：%s", table, date_col, exc)
+        return {}
 
 
 def _to_date(v) -> Optional[date]:
@@ -610,9 +665,116 @@ def _upsert_pledge(symbol: str) -> int:
 
 # ---------------------------------------------------------------- 入口
 
-def fetch_one(symbol: str, skip_fin: bool = False) -> dict:
+_TYPE_CAT = {"P": "按产品", "D": "按地区", "I": "按行业"}
+
+
+def backfill_main_business_vip() -> int:
+    """fina_mainbz_vip 按季度+类型批量，写入 main_business 与 fina_mainbz。
+
+    约 8 季度 × 3 类型 × 分页，远快于东财逐只（~10s/只）。
+    """
+    periods = _periods()
+    total = 0
+    pool = db.get_pool()
+    log.info("fina_mainbz_vip 批量 %d 个季度 × 3 类型", len(periods))
+    for period in periods:
+        for bz_type, category in _TYPE_CAT.items():
+            offset = 0
+            while True:
+                try:
+                    df = _call(
+                        "fina_mainbz_vip",
+                        period=period,
+                        type=bz_type,
+                        offset=offset,
+                        fields="ts_code,end_date,bz_item,bz_sales,bz_profit,"
+                               "bz_cost,curr_type,update_flag",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    # 部分中转站可能不支持 offset/type，降级无 offset
+                    if offset == 0:
+                        try:
+                            df = _call(
+                                "fina_mainbz_vip",
+                                period=period,
+                                type=bz_type,
+                                fields="ts_code,end_date,bz_item,bz_sales,"
+                                       "bz_profit,bz_cost,curr_type,update_flag",
+                            )
+                        except Exception as exc2:  # noqa: BLE001
+                            log.warning("fina_mainbz_vip %s/%s 失败：%s",
+                                        period, bz_type, exc2)
+                            break
+                    else:
+                        log.warning("fina_mainbz_vip %s/%s offset=%d 失败：%s",
+                                    period, bz_type, offset, exc)
+                        break
+                if df is None or df.empty:
+                    break
+                rows_mb = []
+                rows_fm = []
+                for _, row in df.iterrows():
+                    symbol = _plain(str(row["ts_code"]))
+                    if len(symbol) != 6:
+                        continue
+                    ed = _to_date(row.get("end_date"))
+                    if not ed or ed < _cutoff():
+                        continue
+                    item = str(row.get("bz_item") or "").strip()
+                    if not item:
+                        continue
+                    sales = _to_float(row.get("bz_sales"))
+                    profit = _to_float(row.get("bz_profit"))
+                    rows_mb.append((symbol, ed, category, item, sales, None,
+                                    profit, None))
+                    rows_fm.append((
+                        symbol, ed, item, sales, profit,
+                        _to_float(row.get("bz_cost")),
+                        str(row.get("curr_type") or ""),
+                        str(row.get("update_flag") or ""),
+                    ))
+                if rows_mb:
+                    with pool.connection() as conn, conn.cursor() as cur:
+                        cur.executemany(
+                            """INSERT INTO main_business
+                               (market, symbol, report_date, category, item,
+                                revenue, revenue_ratio, profit, profit_ratio)
+                               VALUES ('cn', %s, %s, %s, %s, %s, %s, %s, %s)
+                               ON CONFLICT (market, symbol, report_date,
+                                            category, item) DO UPDATE SET
+                                 revenue=EXCLUDED.revenue,
+                                 profit=EXCLUDED.profit""",
+                            rows_mb)
+                        try:
+                            cur.executemany(
+                                """INSERT INTO fina_mainbz
+                                   (market, symbol, end_date, bz_item, bz_sales,
+                                    bz_profit, bz_cost, curr_type, update_flag)
+                                   VALUES ('cn', %s, %s, %s, %s, %s, %s, %s, %s)
+                                   ON CONFLICT (market, symbol, end_date, bz_item)
+                                   DO UPDATE SET bz_sales=EXCLUDED.bz_sales,
+                                     bz_profit=EXCLUDED.bz_profit,
+                                     bz_cost=EXCLUDED.bz_cost,
+                                     update_flag=EXCLUDED.update_flag""",
+                                rows_fm)
+                        except Exception:
+                            # fina_mainbz 表可能尚未建
+                            pass
+                    total += len(rows_mb)
+                n = len(df)
+                if n < 8000:
+                    break
+                offset += n
+            log.info("fina_mainbz_vip %s/%s 累计 %d 行", period, bz_type, total)
+    log.info("fina_mainbz_vip 完成：%d 行", total)
+    return total
+
+
+def fetch_one(symbol: str, skip_fin: bool = False,
+              skip_main_business: bool = False) -> dict:
     """抓取单只股票的全部基本面（近 2 年），返回各分类入库数。
-    skip_fin=True 时跳过三表+指标（VIP 批量已拉过）。"""
+    skip_fin=True 时跳过三表+指标（VIP 批量已拉过）。
+    skip_main_business=True 时跳过东财主营构成（VIP 批量已拉过）。"""
     result = {"symbol": symbol}
     if not skip_fin:
         try:
@@ -631,7 +793,10 @@ def fetch_one(symbol: str, skip_fin: bool = False) -> dict:
         except Exception as exc:  # noqa: BLE001
             log.warning("[%s] %s 失败：%s", symbol, name, exc)
             result[name] = 0
-    # Tushare 没有主营构成/增减持，走东方财富 best-effort 补充
+    if skip_main_business:
+        result["main_business"] = {"skipped": "vip_batch"}
+        return result
+    # 仅 eastmoney 路径或 VIP 失败时走东财补充
     try:
         from fetcher.sources import cn_fundamentals as _cn
         try:

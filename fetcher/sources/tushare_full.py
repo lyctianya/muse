@@ -18,29 +18,31 @@
 - managers       上市公司管理层                      per-stock
 - share_float    限售股解禁                          per-stock
 - block_trade    大宗交易                            按交易日
-- adj_factor     复权因子                            per-stock（近10年）
-- holder_trade   股东增减持                          per-stock
+- adj_factor     复权因子                            按交易日（近10年）
+- holder_trade   股东增减持                          按公告日
 - daily_ts       A股日线行情                         按交易日（近10年）
 - repurchase     股票回购                            按公告日
-- pledge_detail  股权质押明细                        per-stock
+- pledge_detail  股权质押明细                        per-stock（中转站不支持按日）
 - index_basic    指数基本信息                        一次全量
 - index_weight   指数权重                            按指数
 - index_member   指数成分                            按指数
-- cyq_perf       每日筹码分布                        per-stock
+- cyq_perf       每日筹码分布                        per-stock（接口强制 ts_code）
 - hk_hold        沪深港股通持股明细                  按交易日
 
-幂等 upsert。市场级/按日表用交易日循环；per-stock 表逐只拉取。
+幂等 upsert。能按日/公告日批量的接口一律按日拉（比逐只少一个数量级调用）。
 """
 import logging
 import time
-from datetime import date
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, timedelta
+from typing import Callable, Iterable
 
 import pandas as pd
 
-from fetcher import db
+from fetcher import config, db
 from fetcher.sources.tushare_fundamentals import (
     _call, _cutoff, _plain, _to_date, _to_float, _row_json,
-    _ts_code,
+    _ts_code, _incremental_start, _symbol_max_dates,
 )
 from fetcher.sources.tushare_extra import _trade_days
 
@@ -59,6 +61,46 @@ INDICES = [
 ]
 
 
+def _workers() -> int:
+    return max(1, int(config.TUSHARE_WORKERS))
+
+
+def _parallel_map(
+    items: Iterable,
+    fn: Callable,
+    label: str,
+    *,
+    log_every: int = 100,
+) -> int:
+    """并发执行 fn(item)->int（返回写入行数），共享 Tushare 限流。"""
+    items = list(items)
+    workers = _workers()
+    log.info("%s 待处理 %d 项，workers=%d", label, len(items), workers)
+    t0 = time.time()
+    total = 0
+    done = 0
+    failed = 0
+    if not items:
+        return 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {pool.submit(fn, item): item for item in items}
+        for fut in as_completed(futs):
+            item = futs[fut]
+            done += 1
+            try:
+                total += int(fut.result() or 0)
+            except Exception as exc:  # noqa: BLE001
+                failed += 1
+                log.warning("%s [%s] 失败：%s", label, item, exc)
+            if done % log_every == 0 or done == len(items):
+                log.info("%s 进度 %d/%d，累计 %d 行，失败 %d，%.1fs",
+                         label, done, len(items), total, failed,
+                         time.time() - t0)
+    log.info("%s 完成：%d 行，失败 %d，%.1fs",
+             label, total, failed, time.time() - t0)
+    return total
+
+
 def _symbols_cn() -> list:
     """A股现役代码列表（6位）。"""
     pool = db.get_pool()
@@ -70,51 +112,63 @@ def _symbols_cn() -> list:
 # ---------------------------------------------------------------- 主营业务构成
 
 def backfill_mainbz() -> None:
-    """fina_mainbz：逐只拉取近2年。约 5500 次调用。"""
+    """fina_mainbz：优先 VIP 按季度批量；失败则逐只增量。"""
+    try:
+        from fetcher.sources.tushare_fundamentals import backfill_main_business_vip
+        n = backfill_main_business_vip()
+        if n > 0:
+            return
+    except Exception as exc:  # noqa: BLE001
+        log.warning("fina_mainbz_vip 失败，降级逐只：%s", exc)
     symbols = _symbols_cn()
-    log.info("fina_mainbz 待抓取 %d 只", len(symbols))
-    t0 = time.time()
-    total = 0
-    pool = db.get_pool()
-    for i, symbol in enumerate(symbols, 1):
+    maxes = _symbol_max_dates("fina_mainbz", "end_date")
+    cutoff = _cutoff()
+    todo = [s for s in symbols if not maxes.get(s) or maxes[s] < cutoff]
+    log.info("fina_mainbz 逐只增量：共 %d，待拉 %d", len(symbols), len(todo))
+
+    def _one(symbol: str) -> int:
         try:
             df = _call("fina_mainbz", ts_code=_ts_code(symbol),
                        fields="ts_code,end_date,bz_item,bz_sales,bz_profit,"
                               "bz_cost,curr_type,update_flag")
         except Exception as exc:  # noqa: BLE001
             log.warning("[%s] fina_mainbz 失败：%s", symbol, exc)
-            continue
+            return 0
         if df is None or df.empty:
-            continue
-        with pool.connection() as conn, conn.cursor() as cur:
-            for _, row in df.iterrows():
-                ed = _to_date(row.get("end_date"))
-                if not ed or ed < _cutoff():
-                    continue
-                item = str(row.get("bz_item") or "").strip()
-                if not item:
-                    continue
-                cur.execute(
-                    """INSERT INTO fina_mainbz
-                       (market, symbol, end_date, bz_item, bz_sales, bz_profit,
-                        bz_cost, curr_type, update_flag)
-                       VALUES ('cn', %s, %s, %s, %s, %s, %s, %s, %s)
-                       ON CONFLICT (market, symbol, end_date, bz_item)
-                       DO UPDATE SET bz_sales=EXCLUDED.bz_sales,
-                         bz_profit=EXCLUDED.bz_profit,
-                         bz_cost=EXCLUDED.bz_cost,
-                         update_flag=EXCLUDED.update_flag""",
-                    (symbol, ed, item,
-                     _to_float(row.get("bz_sales")),
-                     _to_float(row.get("bz_profit")),
-                     _to_float(row.get("bz_cost")),
-                     str(row.get("curr_type") or ""),
-                     str(row.get("update_flag") or "")))
-                total += 1
-        if i % 200 == 0:
-            log.info("fina_mainbz 进度 %d/%d，累计 %d 行，%.1fs",
-                     i, len(symbols), total, time.time() - t0)
-    log.info("fina_mainbz 完成：%d 行，%.1fs", total, time.time() - t0)
+            return 0
+        rows = []
+        for _, row in df.iterrows():
+            ed = _to_date(row.get("end_date"))
+            if not ed or ed < cutoff:
+                continue
+            item = str(row.get("bz_item") or "").strip()
+            if not item:
+                continue
+            rows.append((
+                symbol, ed, item,
+                _to_float(row.get("bz_sales")),
+                _to_float(row.get("bz_profit")),
+                _to_float(row.get("bz_cost")),
+                str(row.get("curr_type") or ""),
+                str(row.get("update_flag") or ""),
+            ))
+        if not rows:
+            return 0
+        with db.get_pool().connection() as conn, conn.cursor() as cur:
+            cur.executemany(
+                """INSERT INTO fina_mainbz
+                   (market, symbol, end_date, bz_item, bz_sales, bz_profit,
+                    bz_cost, curr_type, update_flag)
+                   VALUES ('cn', %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (market, symbol, end_date, bz_item)
+                   DO UPDATE SET bz_sales=EXCLUDED.bz_sales,
+                     bz_profit=EXCLUDED.bz_profit,
+                     bz_cost=EXCLUDED.bz_cost,
+                     update_flag=EXCLUDED.update_flag""",
+                rows)
+        return len(rows)
+
+    _parallel_map(todo, _one, "fina_mainbz", log_every=200)
 
 
 # ---------------------------------------------------------------- 公司详细信息
@@ -294,10 +348,10 @@ def _upsert_top_inst(trade_date: str) -> int:
 
 
 def backfill_top_list(from_date: str = "") -> None:
-    """龙虎榜 + 机构明细：近2年按交易日。"""
-    start = _to_date(from_date) or _cutoff()
+    """龙虎榜 + 机构明细：近2年按交易日（默认增量）。"""
+    start = _incremental_start(from_date, "top_list", "trade_date", _cutoff())
     days = _trade_days(start, date.today())
-    log.info("top_list/top_inst 待抓取 %d 个交易日", len(days))
+    log.info("top_list/top_inst 待抓取 %d 个交易日（%s 起）", len(days), start)
     t0 = time.time()
     tl = ti = 0
     for i, d in enumerate(days, 1):
@@ -312,8 +366,8 @@ def backfill_top_list(from_date: str = "") -> None:
 # ---------------------------------------------------------------- 指数日线
 
 def backfill_index_daily(from_date: str = "") -> None:
-    """主要指数日线：近10年。"""
-    start = _to_date(from_date) or TEN_YEARS_AGO
+    """主要指数日线：近10年（默认增量）。"""
+    start = _incremental_start(from_date, "index_daily", "trade_date", TEN_YEARS_AGO)
     s_str = start.strftime("%Y%m%d")
     e_str = date.today().strftime("%Y%m%d")
     log.info("index_daily 待抓取 %d 个指数（%s 起）", len(INDICES), start)
@@ -360,7 +414,7 @@ def backfill_index_daily(from_date: str = "") -> None:
 
 def backfill_moneyflow_hsgt(from_date: str = "") -> None:
     """沪深港通资金流向：近2年按交易日。"""
-    start = _to_date(from_date) or _cutoff()
+    start = _incremental_start(from_date, "moneyflow_hsgt", "trade_date", _cutoff())
     days = _trade_days(start, date.today())
     log.info("moneyflow_hsgt 待抓取 %d 个交易日", len(days))
     t0 = time.time()
@@ -402,7 +456,7 @@ def backfill_moneyflow_hsgt(from_date: str = "") -> None:
 
 def backfill_hsgt_top10(from_date: str = "") -> None:
     """沪深股通十大成交股：近2年按交易日。"""
-    start = _to_date(from_date) or _cutoff()
+    start = _incremental_start(from_date, "hsgt_top10", "trade_date", _cutoff())
     days = _trade_days(start, date.today())
     log.info("hsgt_top10 待抓取 %d 个交易日", len(days))
     t0 = time.time()
@@ -493,7 +547,7 @@ def backfill_disclosure_date() -> None:
 
 def backfill_margin(from_date: str = "") -> None:
     """margin 汇总 + margin_detail 明细：近2年按交易日。"""
-    start = _to_date(from_date) or _cutoff()
+    start = _incremental_start(from_date, "margin_detail", "trade_date", _cutoff())
     days = _trade_days(start, date.today())
     log.info("margin 待抓取 %d 个交易日", len(days))
     t0 = time.time()
@@ -563,7 +617,7 @@ def backfill_margin(from_date: str = "") -> None:
 
 def backfill_stk_limit(from_date: str = "") -> None:
     """stk_limit：近2年按交易日（约 500 天 × 5000 只 = 250 万行）。"""
-    start = _to_date(from_date) or _cutoff()
+    start = _incremental_start(from_date, "stk_limit", "trade_date", _cutoff())
     days = _trade_days(start, date.today())
     log.info("stk_limit 待抓取 %d 个交易日", len(days))
     t0 = time.time()
@@ -827,7 +881,7 @@ def _upsert_block_trade(trade_date: str) -> int:
 
 def backfill_block_trade(from_date: str = "") -> None:
     """block_trade：近2年按交易日。约 500 天 × 若干笔。"""
-    start = _to_date(from_date) or _cutoff()
+    start = _incremental_start(from_date, "block_trade", "trade_date", _cutoff())
     days = _trade_days(start, date.today())
     log.info("block_trade 待抓取 %d 个交易日", len(days))
     t0 = time.time()
@@ -847,104 +901,113 @@ def backfill_block_trade(from_date: str = "") -> None:
 
 
 # ---------------------------------------------------------------- 复权因子
-def backfill_adj_factor() -> None:
-    """adj_factor：逐只拉取近10年复权因子。约 5500 次调用。"""
-    symbols = _symbols_cn()
-    s_str = TEN_YEARS_AGO.strftime("%Y%m%d")
-    e_str = date.today().strftime("%Y%m%d")
-    log.info("adj_factor 待抓取 %d 只（%s 起）", len(symbols), TEN_YEARS_AGO)
-    t0 = time.time()
-    total = 0
-    pool = db.get_pool()
-    for i, symbol in enumerate(symbols, 1):
-        try:
-            df = _call("adj_factor", ts_code=_ts_code(symbol),
-                       start_date=s_str, end_date=e_str,
-                       fields="ts_code,trade_date,adj_factor")
-        except Exception as exc:  # noqa: BLE001
-            log.warning("[%s] adj_factor 失败：%s", symbol, exc)
+_SQL_UPSERT_ADJ = """
+INSERT INTO adj_factor (market, symbol, trade_date, adj_factor)
+VALUES ('cn', %s, %s, %s)
+ON CONFLICT (market, symbol, trade_date) DO UPDATE SET
+  adj_factor=EXCLUDED.adj_factor
+"""
+
+
+def _upsert_adj_factor(trade_date: str) -> int:
+    """单日全市场复权因子。"""
+    try:
+        df = _call("adj_factor", trade_date=trade_date,
+                   fields="ts_code,trade_date,adj_factor")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("adj_factor %s 失败：%s", trade_date, exc)
+        return 0
+    if df is None or df.empty:
+        return 0
+    td = _to_date(trade_date)
+    rows = []
+    for _, row in df.iterrows():
+        symbol = _plain(str(row["ts_code"]))
+        if len(symbol) != 6:
             continue
-        if df is None or df.empty:
-            continue
-        with pool.connection() as conn, conn.cursor() as cur:
-            for _, row in df.iterrows():
-                td = _to_date(row.get("trade_date"))
-                if not td:
-                    continue
-                cur.execute(
-                    """INSERT INTO adj_factor (market, symbol, trade_date, adj_factor)
-                       VALUES ('cn', %s, %s, %s)
-                       ON CONFLICT (market, symbol, trade_date) DO UPDATE SET
-                         adj_factor=EXCLUDED.adj_factor""",
-                    (symbol, td, _to_float(row.get("adj_factor"))))
-                total += 1
-        if i % 200 == 0:
-            log.info("adj_factor 进度 %d/%d，累计 %d 行，%.1fs",
-                     i, len(symbols), total, time.time() - t0)
-    log.info("adj_factor 完成：%d 行，%.1fs", total, time.time() - t0)
+        rows.append((symbol, td, _to_float(row.get("adj_factor"))))
+    if not rows:
+        return 0
+    with db.get_pool().connection() as conn, conn.cursor() as cur:
+        cur.executemany(_SQL_UPSERT_ADJ, rows)
+    return len(rows)
+
+
+def backfill_adj_factor(from_date: str = "") -> None:
+    """adj_factor：按交易日批量（默认增量；空库则近10年）。"""
+    start = _incremental_start(from_date, "adj_factor", "trade_date", TEN_YEARS_AGO)
+    days = _trade_days(start, date.today())
+    _parallel_map(days, _upsert_adj_factor, "adj_factor")
 
 
 # ---------------------------------------------------------------- 股东增减持
-def backfill_holdertrade() -> None:
-    """stk_holdertrade：逐只拉取近2年股东增减持。约 5500 次调用。"""
-    symbols = _symbols_cn()
-    cutoff = _cutoff()
-    s_str = cutoff.strftime("%Y%m%d")
-    e_str = date.today().strftime("%Y%m%d")
-    log.info("stk_holdertrade 待抓取 %d 只（%s 起）", len(symbols), cutoff)
-    t0 = time.time()
-    total = 0
-    pool = db.get_pool()
-    for i, symbol in enumerate(symbols, 1):
-        try:
-            df = _call("stk_holdertrade", ts_code=_ts_code(symbol),
-                       start_date=s_str, end_date=e_str,
-                       fields="ts_code,ann_date,holder_name,holder_type,in_de,"
-                              "change_vol,change_ratio,after_share,after_ratio,"
-                              "avg_price,begin_date,close_date")
-        except Exception as exc:  # noqa: BLE001
-            log.warning("[%s] stk_holdertrade 失败：%s", symbol, exc)
+_SQL_UPSERT_HOLDERTRADE = """
+INSERT INTO holder_trade
+  (market, symbol, ann_date, holder_name, holder_type, in_de,
+   change_vol, change_ratio, after_share, after_ratio,
+   avg_price, begin_date, close_date)
+VALUES ('cn', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (market, symbol, ann_date, holder_name,
+             change_vol, begin_date) DO UPDATE SET
+  holder_type=EXCLUDED.holder_type,
+  in_de=EXCLUDED.in_de,
+  change_ratio=EXCLUDED.change_ratio,
+  after_share=EXCLUDED.after_share,
+  after_ratio=EXCLUDED.after_ratio,
+  avg_price=EXCLUDED.avg_price,
+  close_date=EXCLUDED.close_date
+"""
+
+
+def _upsert_holdertrade(ann_date: str) -> int:
+    """单日全市场股东增减持。"""
+    try:
+        df = _call("stk_holdertrade", ann_date=ann_date,
+                   fields="ts_code,ann_date,holder_name,holder_type,in_de,"
+                          "change_vol,change_ratio,after_share,after_ratio,"
+                          "avg_price,begin_date,close_date")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("stk_holdertrade %s 失败：%s", ann_date, exc)
+        return 0
+    if df is None or df.empty:
+        return 0
+    rows = []
+    for _, row in df.iterrows():
+        symbol = _plain(str(row["ts_code"]))
+        if len(symbol) != 6:
             continue
-        if df is None or df.empty:
+        ad = _to_date(row.get("ann_date"))
+        if not ad:
             continue
-        with pool.connection() as conn, conn.cursor() as cur:
-            for _, row in df.iterrows():
-                ad = _to_date(row.get("ann_date"))
-                if not ad or ad < cutoff:
-                    continue
-                name = str(row.get("holder_name") or "").strip()
-                if not name:
-                    continue
-                cur.execute(
-                    """INSERT INTO holder_trade
-                       (market, symbol, ann_date, holder_name, holder_type, in_de,
-                        change_vol, change_ratio, after_share, after_ratio,
-                        avg_price, begin_date, close_date)
-                       VALUES ('cn', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                       ON CONFLICT (market, symbol, ann_date, holder_name,
-                                    change_vol, begin_date) DO UPDATE SET
-                         holder_type=EXCLUDED.holder_type,
-                         in_de=EXCLUDED.in_de,
-                         change_ratio=EXCLUDED.change_ratio,
-                         after_share=EXCLUDED.after_share,
-                         after_ratio=EXCLUDED.after_ratio,
-                         avg_price=EXCLUDED.avg_price,
-                         close_date=EXCLUDED.close_date""",
-                    (symbol, ad, name,
-                     str(row.get("holder_type") or ""),
-                     str(row.get("in_de") or ""),
-                     _to_float(row.get("change_vol")),
-                     _to_float(row.get("change_ratio")),
-                     _to_float(row.get("after_share")),
-                     _to_float(row.get("after_ratio")),
-                     _to_float(row.get("avg_price")),
-                     _to_date(row.get("begin_date")),
-                     _to_date(row.get("close_date"))))
-                total += 1
-        if i % 200 == 0:
-            log.info("stk_holdertrade 进度 %d/%d，累计 %d 行，%.1fs",
-                     i, len(symbols), total, time.time() - t0)
-    log.info("stk_holdertrade 完成：%d 行，%.1fs", total, time.time() - t0)
+        name = str(row.get("holder_name") or "").strip()
+        if not name:
+            continue
+        # PK 含 begin_date，PG 主键列不可为 NULL；缺省回退到公告日
+        begin = _to_date(row.get("begin_date")) or ad
+        rows.append((
+            symbol, ad, name,
+            str(row.get("holder_type") or ""),
+            str(row.get("in_de") or ""),
+            _to_float(row.get("change_vol")),
+            _to_float(row.get("change_ratio")),
+            _to_float(row.get("after_share")),
+            _to_float(row.get("after_ratio")),
+            _to_float(row.get("avg_price")),
+            begin,
+            _to_date(row.get("close_date")),
+        ))
+    if not rows:
+        return 0
+    with db.get_pool().connection() as conn, conn.cursor() as cur:
+        cur.executemany(_SQL_UPSERT_HOLDERTRADE, rows)
+    return len(rows)
+
+
+def backfill_holdertrade(from_date: str = "") -> None:
+    """stk_holdertrade：按公告日批量（默认增量）。"""
+    start = _incremental_start(from_date, "holder_trade", "ann_date", _cutoff())
+    days = _trade_days(start, date.today())
+    _parallel_map(days, _upsert_holdertrade, "stk_holdertrade")
 
 
 # ---------------------------------------------------------------- A股日线
@@ -986,19 +1049,10 @@ def _upsert_daily_ts(trade_date: str) -> int:
 
 
 def backfill_daily_ts(from_date: str = "") -> None:
-    """daily：A股日线行情（未复权），近10年按交易日批量。约 2430 次调用。"""
-    start = _to_date(from_date) or TEN_YEARS_AGO
+    """daily：A股日线按交易日批量（默认增量；空库则近10年）。"""
+    start = _incremental_start(from_date, "daily_ts", "trade_date", TEN_YEARS_AGO)
     days = _trade_days(start, date.today())
-    log.info("daily 待抓取 %d 个交易日（%s 起）", len(days), start)
-    t0 = time.time()
-    total = 0
-    for i, d in enumerate(days, 1):
-        total += _upsert_daily_ts(d)
-        if i % 100 == 0:
-            log.info("daily 进度 %d/%d，累计 %d 行，%.1fs",
-                     i, len(days), total, time.time() - t0)
-    log.info("daily 完成：%d 个交易日，%d 行，%.1fs",
-             len(days), total, time.time() - t0)
+    _parallel_map(days, _upsert_daily_ts, "daily")
 
 
 # ---------------------------------------------------------------- 股票回购
@@ -1040,68 +1094,80 @@ def _upsert_repurchase(ann_date: str) -> int:
 
 
 def backfill_repurchase(from_date: str = "") -> None:
-    """repurchase：近2年按公告日批量。约 500 次调用。"""
-    start = _to_date(from_date) or _cutoff()
+    """repurchase：按公告日批量（默认增量）。"""
+    start = _incremental_start(from_date, "repurchase", "ann_date", _cutoff())
     days = _trade_days(start, date.today())
-    log.info("repurchase 待抓取 %d 个公告日", len(days))
-    t0 = time.time()
-    total = 0
-    for i, d in enumerate(days, 1):
-        total += _upsert_repurchase(d)
-        if i % 100 == 0:
-            log.info("repurchase 进度 %d/%d，累计 %d 行，%.1fs",
-                     i, len(days), total, time.time() - t0)
-    log.info("repurchase 完成：%d 行，%.1fs", total, time.time() - t0)
+    _parallel_map(days, _upsert_repurchase, "repurchase")
 
 
 # ---------------------------------------------------------------- 质押明细
-def backfill_pledge_detail() -> None:
-    """pledge_detail：逐只拉取近2年股权质押明细。约 5500 次调用。"""
+_SQL_UPSERT_PLEDGE_DETAIL = """
+INSERT INTO pledge_detail
+  (market, symbol, ann_date, holder_name, pledge_amount,
+   start_date, end_date, is_release, release_date)
+VALUES ('cn', %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (market, symbol, ann_date, holder_name, start_date) DO UPDATE SET
+  pledge_amount=EXCLUDED.pledge_amount,
+  is_release=EXCLUDED.is_release,
+  release_date=EXCLUDED.release_date
+"""
+
+
+def _fetch_pledge_detail_one(symbol: str, cutoff: date) -> int:
+    try:
+        df = _call("pledge_detail", ts_code=_ts_code(symbol),
+                   fields="ts_code,ann_date,holder_name,pledge_amount,"
+                          "start_date,end_date,is_release,release_date")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[%s] pledge_detail 失败：%s", symbol, exc)
+        return 0
+    if df is None or df.empty:
+        return 0
+    rows = []
+    for _, row in df.iterrows():
+        ad = _to_date(row.get("ann_date"))
+        if not ad or ad < cutoff:
+            continue
+        name = str(row.get("holder_name") or "").strip()
+        if not name:
+            continue
+        rows.append((
+            symbol, ad, name,
+            _to_float(row.get("pledge_amount")),
+            _to_date(row.get("start_date")),
+            _to_date(row.get("end_date")),
+            str(row.get("is_release") or ""),
+            _to_date(row.get("release_date")),
+        ))
+    if not rows:
+        return 0
+    with db.get_pool().connection() as conn, conn.cursor() as cur:
+        cur.executemany(_SQL_UPSERT_PLEDGE_DETAIL, rows)
+    return len(rows)
+
+
+def _last_trade_day() -> date:
+    """最近一个已开市交易日。"""
+    days = _trade_days(date.today() - timedelta(days=21), date.today())
+    if not days:
+        return date.today() - timedelta(days=1)
+    return max(d for d in (_to_date(x) for x in days) if d)
+
+
+def backfill_pledge_detail(from_date: str = "") -> None:
+    """pledge_detail：逐只拉取；已追上最近交易日的股票跳过（中转不支持按日）。"""
     symbols = _symbols_cn()
-    cutoff = _cutoff()
-    log.info("pledge_detail 待抓取 %d 只（%s 起）", len(symbols), cutoff)
-    t0 = time.time()
-    total = 0
-    pool = db.get_pool()
-    for i, symbol in enumerate(symbols, 1):
-        try:
-            df = _call("pledge_detail", ts_code=_ts_code(symbol),
-                       fields="ts_code,ann_date,holder_name,pledge_amount,"
-                              "start_date,end_date,is_release,release_date")
-        except Exception as exc:  # noqa: BLE001
-            log.warning("[%s] pledge_detail 失败：%s", symbol, exc)
-            continue
-        if df is None or df.empty:
-            continue
-        with pool.connection() as conn, conn.cursor() as cur:
-            for _, row in df.iterrows():
-                ad = _to_date(row.get("ann_date"))
-                if not ad or ad < cutoff:
-                    continue
-                name = str(row.get("holder_name") or "").strip()
-                if not name:
-                    continue
-                cur.execute(
-                    """INSERT INTO pledge_detail
-                       (market, symbol, ann_date, holder_name, pledge_amount,
-                        start_date, end_date, is_release, release_date)
-                       VALUES ('cn', %s, %s, %s, %s, %s, %s, %s, %s)
-                       ON CONFLICT (market, symbol, ann_date, holder_name,
-                                    start_date) DO UPDATE SET
-                         pledge_amount=EXCLUDED.pledge_amount,
-                         is_release=EXCLUDED.is_release,
-                         release_date=EXCLUDED.release_date""",
-                    (symbol, ad, name,
-                     _to_float(row.get("pledge_amount")),
-                     _to_date(row.get("start_date")),
-                     _to_date(row.get("end_date")),
-                     str(row.get("is_release") or ""),
-                     _to_date(row.get("release_date"))))
-                total += 1
-        if i % 200 == 0:
-            log.info("pledge_detail 进度 %d/%d，累计 %d 行，%.1fs",
-                     i, len(symbols), total, time.time() - t0)
-    log.info("pledge_detail 完成：%d 行，%.1fs", total, time.time() - t0)
+    cutoff = _to_date(from_date) or _cutoff()
+    maxes = _symbol_max_dates("pledge_detail", "ann_date")
+    last_open = _last_trade_day()
+    todo = [s for s in symbols if not maxes.get(s) or maxes[s] < last_open]
+    log.info("pledge_detail 增量：共 %d 只，跳过已新 %d，待拉 %d（截止 %s）",
+             len(symbols), len(symbols) - len(todo), len(todo), last_open)
+
+    def _one(symbol: str) -> int:
+        return _fetch_pledge_detail_one(symbol, cutoff)
+
+    _parallel_map(todo, _one, "pledge_detail", log_every=200)
 
 
 # ---------------------------------------------------------------- 指数基本信息
@@ -1145,7 +1211,7 @@ def backfill_index_basic() -> None:
 # ---------------------------------------------------------------- 指数权重
 def backfill_index_weight(from_date: str = "") -> None:
     """index_weight：主要指数近2年权重。约 6 次调用。"""
-    start = _to_date(from_date) or _cutoff()
+    start = _incremental_start(from_date, "index_weight", "trade_date", _cutoff())
     s_str = start.strftime("%Y%m%d")
     e_str = date.today().strftime("%Y%m%d")
     t0 = time.time()
@@ -1216,57 +1282,73 @@ def backfill_index_member() -> None:
 
 
 # ---------------------------------------------------------------- 每日筹码
+_SQL_UPSERT_CYQ = """
+INSERT INTO cyq_perf
+  (market, symbol, trade_date, his_low, his_high,
+   cost_5pct, cost_15pct, cost_50pct, cost_85pct,
+   cost_95pct, weight_avg, winner_rate)
+VALUES ('cn', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (market, symbol, trade_date) DO UPDATE SET
+  weight_avg=EXCLUDED.weight_avg,
+  winner_rate=EXCLUDED.winner_rate
+"""
+
+
+def _fetch_cyq_perf_one(symbol: str, s_str: str, e_str: str) -> int:
+    try:
+        df = _call("cyq_perf", ts_code=_ts_code(symbol),
+                   start_date=s_str, end_date=e_str,
+                   fields="ts_code,trade_date,his_low,his_high,cost_5pct,"
+                          "cost_15pct,cost_50pct,cost_85pct,cost_95pct,"
+                          "weight_avg,winner_rate")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[%s] cyq_perf 失败：%s", symbol, exc)
+        return 0
+    if df is None or df.empty:
+        return 0
+    rows = []
+    for _, row in df.iterrows():
+        td = _to_date(row.get("trade_date"))
+        if not td:
+            continue
+        rows.append((
+            symbol, td,
+            _to_float(row.get("his_low")),
+            _to_float(row.get("his_high")),
+            _to_float(row.get("cost_5pct")),
+            _to_float(row.get("cost_15pct")),
+            _to_float(row.get("cost_50pct")),
+            _to_float(row.get("cost_85pct")),
+            _to_float(row.get("cost_95pct")),
+            _to_float(row.get("weight_avg")),
+            _to_float(row.get("winner_rate")),
+        ))
+    if not rows:
+        return 0
+    with db.get_pool().connection() as conn, conn.cursor() as cur:
+        cur.executemany(_SQL_UPSERT_CYQ, rows)
+    return len(rows)
+
+
 def backfill_cyq_perf() -> None:
-    """cyq_perf：逐只拉取近2年每日筹码分布。约 5500 次调用。"""
+    """cyq_perf：逐只增量；已有数据从 max(trade_date) 续拉，已追上则跳过。"""
     symbols = _symbols_cn()
     cutoff = _cutoff()
-    s_str = cutoff.strftime("%Y%m%d")
     e_str = date.today().strftime("%Y%m%d")
-    log.info("cyq_perf 待抓取 %d 只（%s 起）", len(symbols), cutoff)
-    t0 = time.time()
-    total = 0
-    pool = db.get_pool()
-    for i, symbol in enumerate(symbols, 1):
-        try:
-            df = _call("cyq_perf", ts_code=_ts_code(symbol),
-                       start_date=s_str, end_date=e_str,
-                       fields="ts_code,trade_date,his_low,his_high,cost_5pct,"
-                              "cost_15pct,cost_50pct,cost_85pct,cost_95pct,"
-                              "weight_avg,winner_rate")
-        except Exception as exc:  # noqa: BLE001
-            log.warning("[%s] cyq_perf 失败：%s", symbol, exc)
-            continue
-        if df is None or df.empty:
-            continue
-        with pool.connection() as conn, conn.cursor() as cur:
-            for _, row in df.iterrows():
-                td = _to_date(row.get("trade_date"))
-                if not td:
-                    continue
-                cur.execute(
-                    """INSERT INTO cyq_perf
-                       (market, symbol, trade_date, his_low, his_high,
-                        cost_5pct, cost_15pct, cost_50pct, cost_85pct,
-                        cost_95pct, weight_avg, winner_rate)
-                       VALUES ('cn', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                       ON CONFLICT (market, symbol, trade_date) DO UPDATE SET
-                         weight_avg=EXCLUDED.weight_avg,
-                         winner_rate=EXCLUDED.winner_rate""",
-                    (symbol, td,
-                     _to_float(row.get("his_low")),
-                     _to_float(row.get("his_high")),
-                     _to_float(row.get("cost_5pct")),
-                     _to_float(row.get("cost_15pct")),
-                     _to_float(row.get("cost_50pct")),
-                     _to_float(row.get("cost_85pct")),
-                     _to_float(row.get("cost_95pct")),
-                     _to_float(row.get("weight_avg")),
-                     _to_float(row.get("winner_rate"))))
-                total += 1
-        if i % 200 == 0:
-            log.info("cyq_perf 进度 %d/%d，累计 %d 行，%.1fs",
-                     i, len(symbols), total, time.time() - t0)
-    log.info("cyq_perf 完成：%d 行，%.1fs", total, time.time() - t0)
+    maxes = _symbol_max_dates("cyq_perf", "trade_date")
+    last_open = _last_trade_day()
+
+    def _one(symbol: str) -> int:
+        have = maxes.get(symbol)
+        if have and have >= last_open:
+            return 0
+        start = have or cutoff
+        return _fetch_cyq_perf_one(symbol, start.strftime("%Y%m%d"), e_str)
+
+    caught = sum(1 for s in symbols if maxes.get(s) and maxes[s] >= last_open)
+    log.info("cyq_perf 增量：共 %d 只，已追上跳过 %d，截止日 %s",
+             len(symbols), caught, last_open)
+    _parallel_map(symbols, _one, "cyq_perf", log_every=200)
 
 
 # ------------------------------------------------------- 沪深港股通持股明细
@@ -1300,15 +1382,7 @@ def _upsert_hk_hold(trade_date: str) -> int:
 
 
 def backfill_hk_hold(from_date: str = "") -> None:
-    """hk_hold：近2年按交易日批量。约 500 次调用。"""
-    start = _to_date(from_date) or _cutoff()
+    """hk_hold：按交易日批量（默认增量）。"""
+    start = _incremental_start(from_date, "hk_hold", "trade_date", _cutoff())
     days = _trade_days(start, date.today())
-    log.info("hk_hold 待抓取 %d 个交易日", len(days))
-    t0 = time.time()
-    total = 0
-    for i, d in enumerate(days, 1):
-        total += _upsert_hk_hold(d)
-        if i % 100 == 0:
-            log.info("hk_hold 进度 %d/%d，累计 %d 行，%.1fs",
-                     i, len(days), total, time.time() - t0)
-    log.info("hk_hold 完成：%d 行，%.1fs", total, time.time() - t0)
+    _parallel_map(days, _upsert_hk_hold, "hk_hold")
