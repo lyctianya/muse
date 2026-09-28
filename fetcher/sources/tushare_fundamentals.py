@@ -19,8 +19,9 @@ import json
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
-from typing import Optional
+from typing import Callable, Iterable, Optional
 
 import pandas as pd
 
@@ -190,6 +191,46 @@ def _symbol_max_dates(table: str, date_col: str) -> dict:
     except Exception as exc:  # noqa: BLE001
         log.warning("查询 %s 分股票 max(%s) 失败：%s", table, date_col, exc)
         return {}
+
+
+def _workers() -> int:
+    return max(1, int(config.TUSHARE_WORKERS))
+
+
+def _parallel_map(
+    items: Iterable,
+    fn: Callable,
+    label: str,
+    *,
+    log_every: int = 100,
+) -> int:
+    """并发执行 fn(item)->int（返回写入行数），共享 Tushare 限流。"""
+    items = list(items)
+    workers = _workers()
+    log.info("%s 待处理 %d 项，workers=%d", label, len(items), workers)
+    if not items:
+        return 0
+    t0 = time.time()
+    total = 0
+    done = 0
+    failed = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {pool.submit(fn, item): item for item in items}
+        for fut in as_completed(futs):
+            item = futs[fut]
+            done += 1
+            try:
+                total += int(fut.result() or 0)
+            except Exception as exc:  # noqa: BLE001
+                failed += 1
+                log.warning("%s [%s] 失败：%s", label, item, exc)
+            if done % log_every == 0 or done == len(items):
+                log.info("%s 进度 %d/%d，累计 %d 行，失败 %d，%.1fs",
+                         label, done, len(items), total, failed,
+                         time.time() - t0)
+    log.info("%s 完成：%d 行，失败 %d，%.1fs",
+             label, total, failed, time.time() - t0)
+    return total
 
 
 def _to_date(v) -> Optional[date]:

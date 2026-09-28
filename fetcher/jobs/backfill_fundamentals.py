@@ -90,21 +90,32 @@ def backfill_symbols(symbols: list, source: str = "eastmoney") -> None:
             log.warning("VIP 主营构成批量失败，将跳过东财补充（请检查积分/中转）：%s",
                         exc)
             skip_main = True  # 仍不走东财，避免拖死全流程
-        # 股东类：只补库内尚未追上的股票，并并发
+        # 股东类：任一表未追上近半年则纳入待拉；并发增量
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from fetcher.sources.tushare_fundamentals import _symbol_max_dates
         from datetime import timedelta
-        max_holders = _symbol_max_dates("top_holders", "report_date")
-        # 近两个季度内已有十大股东 → 跳过该股
         fresh_cut = date.today() - timedelta(days=180)
-        todo = [(s, n) for s, n in symbols
-                if not max_holders.get(s) or max_holders[s] < fresh_cut]
+        max_holders = _symbol_max_dates("top_holders", "report_date")
+        max_hnum = _symbol_max_dates("holder_number", "report_date")
+        max_pledge = _symbol_max_dates("pledge_info", "stat_date")
+
+        def _stale(sym: str) -> bool:
+            for mx in (max_holders.get(sym), max_hnum.get(sym), max_pledge.get(sym)):
+                if mx is None or mx < fresh_cut:
+                    return True
+            return False
+
+        todo = [(s, n) for s, n in symbols if _stale(s)]
         log.info("股东/户数/质押增量：共 %d 只，跳过已有 %d，待拉 %d，workers=%d",
                  total, total - len(todo), len(todo), config.TUSHARE_WORKERS)
 
+        _skip_fin = skip_fin
+        _skip_main = skip_main
+
         def _one(pair):
             sym, _name = pair
-            return ts_fund.fetch_one(sym, skip_fin=True, skip_main_business=True)
+            return ts_fund.fetch_one(
+                sym, skip_fin=_skip_fin, skip_main_business=_skip_main)
 
         workers = max(1, int(config.TUSHARE_WORKERS))
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -147,9 +158,9 @@ def main() -> None:
     ap.add_argument("--symbols", default="", help="指定股票，逗号分隔（如 600519,000001）")
     ap.add_argument("--market-wide", action="store_true",
                     help="只跑全市场维度（股权质押+股东增减持，仅 eastmoney 源）")
-    ap.add_argument("--source", default="eastmoney",
+    ap.add_argument("--source", default="tushare",
                     choices=["eastmoney", "tushare"],
-                    help="数据源：eastmoney（默认）或 tushare（需 TUSHARE_TOKEN）")
+                    help="数据源：tushare（默认，批量+增量）或 eastmoney")
     ap.add_argument("--check-token", action="store_true",
                     help="校验 Tushare token 有效性后退出")
     args = ap.parse_args()

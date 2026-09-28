@@ -19,7 +19,7 @@ import pandas as pd
 from fetcher import config, db
 from fetcher.sources.tushare_fundamentals import (
     _call, _cutoff, _plain, _to_date, _to_float, _row_json,
-    _incremental_start,
+    _incremental_start, _parallel_map,
 )
 
 log = logging.getLogger(__name__)
@@ -318,52 +318,34 @@ def _upsert_express(period: str) -> int:
 
 # ---------------------------------------------------------------- 批量入口
 
+
 def backfill_daily_basic(from_date: str = "") -> None:
-    """每日指标，近10年。"""
+    """每日指标：按交易日增量并发。"""
     start = _incremental_start(from_date, "daily_basic", "trade_date", TEN_YEARS_AGO)
-    days = _trade_days(start, date.today())
-    log.info("daily_basic 待抓取 %d 个交易日（%s 起）", len(days), start)
-    t0 = time.time()
-    total = 0
-    for i, d in enumerate(days, 1):
-        total += _upsert_daily_basic(d)
-        if i % 100 == 0:
-            log.info("daily_basic 进度 %d/%d，累计 %d 行，%.1fs",
-                     i, len(days), total, time.time() - t0)
-    log.info("daily_basic 完成：%d 个交易日，%d 行，%.1fs",
-             len(days), total, time.time() - t0)
+    _parallel_map(_trade_days(start, date.today()), _upsert_daily_basic, "daily_basic")
+
+
+
+def _upsert_moneyflow_suspend_day(d: str) -> int:
+    return _upsert_moneyflow(d) + _upsert_suspend(d)
 
 
 def backfill_moneyflow_suspend(from_date: str = "") -> None:
-    """资金流向 + 停复牌，近2年。"""
-    start = _incremental_start(from_date, "moneyflow", "trade_date", _cutoff())
-    days = _trade_days(start, date.today())
-    log.info("moneyflow/suspend 待抓取 %d 个交易日（%s 起）", len(days), start)
-    t0 = time.time()
-    tm = ts = 0
-    for i, d in enumerate(days, 1):
-        tm += _upsert_moneyflow(d)
-        ts += _upsert_suspend(d)
-        if i % 100 == 0:
-            log.info("资金流/停复牌 进度 %d/%d，%.1fs",
-                     i, len(days), time.time() - t0)
-    log.info("资金流/停复牌完成：%d 个交易日，moneyflow %d 行，suspend %d 行，%.1fs",
-             len(days), tm, ts, time.time() - t0)
+    """资金流向 + 停复牌：按交易日增量并发。"""
+    # 取两表较早的 max，避免 suspend 落后被跳过
+    s1 = _incremental_start(from_date, "moneyflow", "trade_date", _cutoff())
+    s2 = _incremental_start(from_date, "suspend", "trade_date", _cutoff())
+    start = min(s1, s2)
+    log.info("moneyflow/suspend 增量起点 %s（moneyflow=%s suspend=%s）", start, s1, s2)
+    _parallel_map(_trade_days(start, date.today()), _upsert_moneyflow_suspend_day,
+                  "moneyflow/suspend")
+
 
 
 def backfill_dividend(from_date: str = "") -> None:
-    """分红送股，近2年（按公告日遍历交易日）。"""
+    """分红送股：按公告日增量并发。"""
     start = _incremental_start(from_date, "dividend", "ann_date", _cutoff())
-    days = _trade_days(start, date.today())
-    log.info("dividend 待抓取 %d 个公告日", len(days))
-    t0 = time.time()
-    total = 0
-    for i, d in enumerate(days, 1):
-        total += _upsert_dividend(d)
-        if i % 100 == 0:
-            log.info("dividend 进度 %d/%d，累计 %d 行，%.1fs",
-                     i, len(days), total, time.time() - t0)
-    log.info("dividend 完成：%d 行，%.1fs", total, time.time() - t0)
+    _parallel_map(_trade_days(start, date.today()), _upsert_dividend, "dividend")
 
 
 def backfill_forecast_express(from_date: str = "") -> None:

@@ -47,7 +47,7 @@ JOBS = {
     # 按交易日（中）
     "top_list": ("龙虎榜", tf.backfill_top_list),
     "stk_limit": ("涨跌停（近2年）", tf.backfill_stk_limit),
-    # 逐只（慢）
+    # 逐只（慢，增量跳过已有）
     "mainbz": ("主营业务构成", tf.backfill_mainbz),
     "fina_audit": ("审计意见", tf.backfill_fina_audit),
     "managers": ("管理层", tf.backfill_managers),
@@ -92,7 +92,8 @@ def main() -> None:
             if name in ("top_list", "stk_limit", "index", "hsgt_flow",
                         "hsgt_top10", "margin", "block_trade",
                         "daily_ts", "repurchase", "hk_hold", "index_info",
-                        "adj_factor", "holdertrade", "pledge_detail"):
+                        "adj_factor", "holdertrade", "pledge_detail",
+                        "disclosure"):
                 fn(args.from_date)
             else:
                 fn()
