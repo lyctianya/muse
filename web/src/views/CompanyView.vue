@@ -534,6 +534,69 @@
           </div>
           <a-empty v-else description="暂无数据" />
         </a-tab-pane>
+        <a-tab-pane key="repurchase" title="股票回购">
+          <div v-if="repurchase.length">
+            <a-table :data="repurchase" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="公告日" data-index="ann_date" :width="110" />
+                <a-table-column title="进度" data-index="proc" :width="140" />
+                <a-table-column title="回购数量(股)" data-index="vol">
+                  <template #cell="{ record }">{{ fmtNum(record.vol) }}</template>
+                </a-table-column>
+                <a-table-column title="回购金额(元)" data-index="amount">
+                  <template #cell="{ record }">{{ fmtNum(record.amount) }}</template>
+                </a-table-column>
+                <a-table-column title="价格下限" data-index="price_low">
+                  <template #cell="{ record }">{{ fmtNum(record.price_low) }}</template>
+                </a-table-column>
+                <a-table-column title="价格上限" data-index="price_high">
+                  <template #cell="{ record }">{{ fmtNum(record.price_high) }}</template>
+                </a-table-column>
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
+        <a-tab-pane key="pledge-detail" title="质押明细">
+          <div v-if="pledgeDetail.length">
+            <a-table :data="pledgeDetail" :pagination="{ pageSize: 20 }" size="small">
+              <template #columns>
+                <a-table-column title="公告日" data-index="ann_date" :width="110" />
+                <a-table-column title="出质人" data-index="holder_name" :width="180" ellipsis tooltip />
+                <a-table-column title="质押数量(万股)" data-index="pledge_amount">
+                  <template #cell="{ record }">{{ fmtNum(record.pledge_amount) }}</template>
+                </a-table-column>
+                <a-table-column title="起始日" data-index="start_date" :width="110" />
+                <a-table-column title="到期日" data-index="end_date" :width="110" />
+                <a-table-column title="已解押" data-index="is_release" :width="90" />
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
+        <a-tab-pane key="cyq" title="筹码分布">
+          <div v-if="cyq.length">
+            <a-row :gutter="16" style="margin-bottom: 12px">
+              <a-col :span="8">
+                <a-statistic title="最新获利盘比例(%)" :value="cyqLatest.winner_rate != null ? Number(cyqLatest.winner_rate).toFixed(2) : '-'" />
+              </a-col>
+              <a-col :span="8">
+                <a-statistic title="平均成本" :value="fmtNum(cyqLatest.weight_avg)" />
+              </a-col>
+              <a-col :span="8">
+                <a-statistic title="90%成本区间" :value="cyqCostRange" />
+              </a-col>
+            </a-row>
+            <div ref="cyqEl" style="width: 100%; height: 300px"></div>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
+        <a-tab-pane key="hk-hold" title="港股通持股">
+          <div v-if="hkHold.length">
+            <div ref="hkHoldEl" style="width: 100%; height: 300px"></div>
+          </div>
+          <a-empty v-else description="暂无数据" />
+        </a-tab-pane>
       </a-tabs>
     </a-spin>
   </a-card>
@@ -613,6 +676,20 @@ const disclosure = ref([])
 const stkLimit = ref([])
 const shareFloat = ref([])
 const blockTrade = ref([])
+const repurchase = ref([])
+const pledgeDetail = ref([])
+const cyq = ref([])
+const hkHold = ref([])
+const cyqEl = ref(null)
+const hkHoldEl = ref(null)
+let cyqChart = null
+let hkHoldChart = null
+const cyqLatest = computed(() => (cyq.value.length ? cyq.value[0] : {}))
+const cyqCostRange = computed(() => {
+  const c = cyqLatest.value
+  if (c.cost_5pct == null || c.cost_95pct == null) return '-'
+  return `${fmtNum(c.cost_5pct)} ~ ${fmtNum(c.cost_95pct)}`
+})
 // 未来1年待解禁统计
 const futureFloatStat = computed(() => {
   const oneYearLater = new Date()
@@ -846,6 +923,8 @@ function onResize() {
   marginDetailChart && marginDetailChart.resize()
   valPeChart && valPeChart.resize()
   valPbChart && valPbChart.resize()
+  cyqChart && cyqChart.resize()
+  hkHoldChart && hkHoldChart.resize()
 }
 
 // tab 切换后重算图表尺寸（隐藏 tab 内初始化的图表宽高为 0）；新 tab 懒加载数据
@@ -890,6 +969,14 @@ async function ensureTabLoaded(key) {
       shareFloat.value = await getJSON(`/api/share-float?${q}`)
     } else if (key === 'block-trade') {
       blockTrade.value = await getJSON(`/api/block-trade?${q}&limit=100`)
+    } else if (key === 'repurchase') {
+      repurchase.value = await getJSON(`/api/repurchase?${q}`)
+    } else if (key === 'pledge-detail') {
+      pledgeDetail.value = await getJSON(`/api/pledge-detail?${q}`)
+    } else if (key === 'cyq') {
+      cyq.value = await getJSON(`/api/cyq?${q}&limit=250`)
+    } else if (key === 'hk-hold') {
+      hkHold.value = await getJSON(`/api/hk-hold?${q}&limit=250`)
     }
   } catch (e) {
     extraLoaded[key] = false
@@ -897,6 +984,8 @@ async function ensureTabLoaded(key) {
   }
   await nextTick()
   if (key === 'margin-detail') renderMarginDetailChart()
+  if (key === 'cyq') renderCyqChart()
+  if (key === 'hk-hold') renderHkHoldChart()
 }
 
 function renderPePbChart() {
@@ -1007,6 +1096,8 @@ onBeforeUnmount(() => {
   marginDetailChart && marginDetailChart.dispose()
   valPeChart && valPeChart.dispose()
   valPbChart && valPbChart.dispose()
+  cyqChart && cyqChart.dispose()
+  hkHoldChart && hkHoldChart.dispose()
 })
 
 function renderMarginDetailChart() {
@@ -1034,6 +1125,70 @@ function renderMarginDetailChart() {
       {
         name: '融券余额(万)', type: 'line', data: pick('rqye'), smooth: true, showSymbol: false,
         lineStyle: { width: 1.5 }, yAxisIndex: 1, itemStyle: { color: '#165dff' },
+      },
+    ],
+  })
+}
+
+function renderCyqChart() {
+  if (!cyqEl.value || !cyq.value.length) return
+  cyqChart && cyqChart.dispose()
+  cyqChart = echarts.init(cyqEl.value)
+  const rows = [...cyq.value].reverse()
+  const dates = rows.map((r) => r.trade_date)
+  const pick = (k) => rows.map((r) => (r[k] != null ? +Number(r[k]).toFixed(2) : '-'))
+  cyqChart.setOption({
+    animation: false,
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['获利盘比例(%)', '平均成本', '50%成本'] },
+    grid: { left: '10%', right: '8%', top: '12%', bottom: '12%' },
+    xAxis: { type: 'category', data: dates, axisLabel: { hideOverlap: true, fontSize: 10 } },
+    yAxis: [
+      { type: 'value', name: '获利盘(%)' },
+      { type: 'value', name: '成本' },
+    ],
+    series: [
+      {
+        name: '获利盘比例(%)', type: 'line', data: pick('winner_rate'), smooth: true, showSymbol: false,
+        lineStyle: { width: 1.5 }, itemStyle: { color: '#ef232a' },
+      },
+      {
+        name: '平均成本', type: 'line', data: pick('weight_avg'), smooth: true, showSymbol: false,
+        yAxisIndex: 1, lineStyle: { width: 1.5 }, itemStyle: { color: '#165dff' },
+      },
+      {
+        name: '50%成本', type: 'line', data: pick('cost_50pct'), smooth: true, showSymbol: false,
+        yAxisIndex: 1, lineStyle: { width: 1, type: 'dashed' }, itemStyle: { color: '#86909c' },
+      },
+    ],
+  })
+}
+
+function renderHkHoldChart() {
+  if (!hkHoldEl.value || !hkHold.value.length) return
+  hkHoldChart && hkHoldChart.dispose()
+  hkHoldChart = echarts.init(hkHoldEl.value)
+  const rows = [...hkHold.value].reverse()
+  const dates = rows.map((r) => r.trade_date)
+  const pick = (k) => rows.map((r) => (r[k] != null ? +Number(r[k]).toFixed(2) : '-'))
+  hkHoldChart.setOption({
+    animation: false,
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['持股数量(股)', '持股占比(%)'] },
+    grid: { left: '10%', right: '8%', top: '12%', bottom: '12%' },
+    xAxis: { type: 'category', data: dates, axisLabel: { hideOverlap: true, fontSize: 10 } },
+    yAxis: [
+      { type: 'value', name: '持股(股)' },
+      { type: 'value', name: '占比(%)' },
+    ],
+    series: [
+      {
+        name: '持股数量(股)', type: 'line', data: pick('vol'), smooth: true, showSymbol: false,
+        lineStyle: { width: 1.5 }, itemStyle: { color: '#ef232a' },
+      },
+      {
+        name: '持股占比(%)', type: 'line', data: pick('ratio'), smooth: true, showSymbol: false,
+        yAxisIndex: 1, lineStyle: { width: 1.5 }, itemStyle: { color: '#165dff' },
       },
     ],
   })
