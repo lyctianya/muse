@@ -60,7 +60,11 @@
       </a-row>
 
       <!-- 财务 / 股东 Tabs -->
-      <a-tabs @change="onTabChange">
+      <a-tabs
+        v-model:active-key="activeTab"
+        class="company-tabs"
+        @change="onTabChange"
+      >
         <a-tab-pane key="income" title="利润表">
           <fin-table :rows="financials.income" />
         </a-tab-pane>
@@ -713,6 +717,7 @@ function fmtYi(v) {
 const marginDetailEl = ref(null)
 let marginDetailChart = null
 const extraLoaded = {}
+const activeTab = ref('income')
 
 // 通用财务表：把 data JSON 的键值对转成行
 const FinTable = {
@@ -927,8 +932,29 @@ function onResize() {
   hkHoldChart && hkHoldChart.resize()
 }
 
+// 读取 / 恢复 tabs 导航条横向偏移（Arco 用 transform，不是 scrollLeft）
+function getTabsNavList() {
+  return document.querySelector('.company-tabs .arco-tabs-nav-tab-list')
+}
+function readTabsOffset() {
+  const list = getTabsNavList()
+  if (!list) return 0
+  const m = /translateX\((-?\d+(?:\.\d+)?)px\)/.exec(list.style.transform || '')
+  return m ? Math.abs(parseFloat(m[1])) : 0
+}
+function writeTabsOffset(px) {
+  const list = getTabsNavList()
+  if (!list) return
+  list.style.transform = `translateX(${-Math.max(0, px)}px)`
+}
+
 // tab 切换后重算图表尺寸（隐藏 tab 内初始化的图表宽高为 0）；新 tab 懒加载数据
 function onTabChange(key) {
+  // 数据加载会触发布局/ResizeObserver；Arco auto 模式还会把 offset 置 0。
+  // 先记下当前偏移，在 Arco 校正与内容刷新后再写回，避免导航条被弹回最左。
+  const saved = readTabsOffset()
+  const restore = () => writeTabsOffset(saved)
+  setTimeout(restore, 0)
   nextTick(() => {
     pePbChart && pePbChart.resize()
     mfChart && mfChart.resize()
@@ -936,7 +962,10 @@ function onTabChange(key) {
     valPeChart && valPeChart.resize()
     valPbChart && valPbChart.resize()
   })
-  if (key) ensureTabLoaded(key)
+  if (key) ensureTabLoaded(key).finally(() => {
+    nextTick(restore)
+    setTimeout(restore, 50)
+  })
 }
 
 // 新增 tab 懒加载：只在首次切换到该 tab 时请求

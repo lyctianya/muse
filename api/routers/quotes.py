@@ -16,15 +16,25 @@ def search_symbols(
     limit: int = Query(default=50, le=200),
 ):
     """搜索股票：按代码/名称模糊匹配，只返回现役（active）股票。"""
-    sql = "SELECT market, symbol, name, currency FROM symbols WHERE active = TRUE"
+    sql = (
+        "SELECT s.market, s.symbol,"
+        " COALESCE(NULLIF(c.name, ''), NULLIF(s.name, s.symbol), s.name),"
+        " s.currency"
+        " FROM symbols s"
+        " LEFT JOIN company_info c ON c.market = s.market AND c.symbol = s.symbol"
+        " WHERE s.active = TRUE"
+    )
     params: list = []
     if market:
-        sql += " AND market = %s"
+        sql += " AND s.market = %s"
         params.append(market)
     if q:
-        sql += " AND (symbol ILIKE %s OR name ILIKE %s)"
-        params += [f"%{q}%", f"%{q}%"]
-    sql += " ORDER BY market, symbol LIMIT %s"
+        sql += (
+            " AND (s.symbol ILIKE %s OR s.name ILIKE %s"
+            " OR COALESCE(c.name, '') ILIKE %s)"
+        )
+        params += [f"%{q}%", f"%{q}%", f"%{q}%"]
+    sql += " ORDER BY s.market, s.symbol LIMIT %s"
     params.append(limit)
     with _conn() as conn:
         with conn.cursor() as cur:

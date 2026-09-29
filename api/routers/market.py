@@ -54,9 +54,13 @@ def market_top(
     with _conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                f"""SELECT b.symbol, s.name, b.close, b.pct_change, b.amount
+                f"""SELECT b.symbol,
+                           COALESCE(NULLIF(c.name, ''), NULLIF(s.name, s.symbol), s.name),
+                           b.close, b.pct_change, b.amount
                     FROM daily_bars b
                     JOIN symbols s ON s.market = b.market AND s.symbol = b.symbol
+                    LEFT JOIN company_info c
+                      ON c.market = b.market AND c.symbol = b.symbol
                     WHERE b.market = %s
                       AND b.trade_date = (
                           SELECT MAX(trade_date) FROM daily_bars WHERE market = %s)

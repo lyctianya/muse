@@ -44,11 +44,15 @@ def list_watchlist():
                 " NULL::numeric AS pe_ttm) d ON TRUE"
             )
             cur.execute(
-                "SELECT w.market, w.symbol, s.name, w.group_name, w.note,"
+                "SELECT w.market, w.symbol,"
+                " COALESCE(NULLIF(c.name, ''), NULLIF(s.name, s.symbol), s.name),"
+                " w.group_name, w.note,"
                 " w.added_at, b.close, b.pct_change, d.total_mv, d.pe_ttm"
                 " FROM watchlist w"
                 " LEFT JOIN symbols s"
                 "  ON s.market = w.market AND s.symbol = w.symbol"
+                " LEFT JOIN company_info c"
+                "  ON c.market = w.market AND c.symbol = w.symbol"
                 " LEFT JOIN LATERAL ("
                 "  SELECT close, pct_change FROM daily_bars"
                 "  WHERE market = w.market AND symbol = w.symbol"

@@ -150,6 +150,11 @@ def import_parquet(conn: psycopg.Connection, path: Path, market: str) -> int:
 
 
 def fill_symbols(conn: psycopg.Connection) -> int:
+    """从行情表补齐缺失的 symbols 行。
+
+    名称暂时用代码占位（parquet 无名称）；之后需跑 daily_fetch / 基本面回填
+    或从 company_info 回写真实名称。ON CONFLICT DO NOTHING，不覆盖已有名称。
+    """
     sql = """
     INSERT INTO symbols (market, symbol, name, currency, active)
     SELECT DISTINCT market, symbol, symbol, currency, TRUE

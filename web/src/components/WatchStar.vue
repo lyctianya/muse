@@ -12,6 +12,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import { IconStar, IconStarFill } from '@arco-design/web-vue/es/icon'
 
 const props = defineProps({ market: { type: String, default: 'cn' }, symbol: String })
 
