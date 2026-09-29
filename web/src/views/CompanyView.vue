@@ -1,10 +1,10 @@
 <template>
-  <a-card>
+  <a-card class="stock-head" :bordered="false">
     <template #title>
       <a-space>
         <a-button shape="circle" @click="$router.back()"><icon-left /></a-button>
-        <span>{{ title }}</span>
-        <a-tag>A股</a-tag>
+        <span class="stock-title">{{ title }}</span>
+        <a-tag color="arcoblue">A股</a-tag>
         <WatchStar market="cn" :symbol="props.symbol" />
       </a-space>
     </template>
@@ -631,7 +631,7 @@ import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconLeft } from '@arco-design/web-vue/es/icon'
-import * as echarts from 'echarts'
+import { echarts, initChart } from '../utils/echarts-theme.js'
 import WatchStar from '../components/WatchStar.vue'
 import FinTable from '../components/FinTable.vue'
 import { fmtDateLocal as fmt } from '../utils/date.js'
@@ -868,7 +868,7 @@ function renderChart(bars, macd) {
     series: [
       {
         name: 'K线', type: 'candlestick', data: candles,
-        itemStyle: { color: '#ef232a', color0: '#14b143', borderColor: '#ef232a', borderColor0: '#14b143' },
+        itemStyle: { color: '#e5484d', color0: '#14b143', borderColor: '#ef232a', borderColor0: '#14b143' },
       },
       { name: 'DIF', type: 'line', data: dif, showSymbol: false, lineStyle: { width: 1 }, xAxisIndex: 1, yAxisIndex: 1 },
       { name: 'DEA', type: 'line', data: dea, showSymbol: false, lineStyle: { width: 1 }, xAxisIndex: 1, yAxisIndex: 1 },
@@ -883,7 +883,7 @@ function renderChart(bars, macd) {
 function renderIncomeChart() {
   if (!incomeEl.value || !financials.value.income.length) return
   incomeChart && incomeChart.dispose()
-  incomeChart = echarts.init(incomeEl.value)
+  incomeChart = initChart(incomeEl.value)
   // 按报告期升序
   const rows = [...financials.value.income].reverse()
   const dates = rows.map((r) => r.report_date)
@@ -897,9 +897,9 @@ function renderIncomeChart() {
     xAxis: { type: 'category', data: dates, axisLabel: { hideOverlap: true, fontSize: 10 } },
     yAxis: { type: 'value', name: '亿元' },
     series: [
-      { name: '营收(亿)', type: 'bar', data: revenue, itemStyle: { color: '#165dff' } },
+      { name: '营收(亿)', type: 'bar', data: revenue, itemStyle: { color: '#2f6bff' } },
       { name: '净利润(亿)', type: 'line', data: profit, smooth: true, showSymbol: false,
-        lineStyle: { width: 2 }, itemStyle: { color: '#ef232a' } },
+        lineStyle: { width: 2 }, itemStyle: { color: '#e5484d' } },
     ],
   })
 }
@@ -907,7 +907,7 @@ function renderIncomeChart() {
 function renderRoeChart() {
   if (!roeEl.value || !financials.value.indicator.length) return
   roeChart && roeChart.dispose()
-  roeChart = echarts.init(roeEl.value)
+  roeChart = initChart(roeEl.value)
   const rows = [...financials.value.indicator].reverse()
   const dates = rows.map((r) => r.report_date)
   const pick = (k) => rows.map((r) => (r[k] != null ? +Number(r[k]).toFixed(2) : '-'))
@@ -1040,7 +1040,7 @@ async function ensureTabLoaded(key) {
 function renderPePbChart() {
   if (!pePbEl.value || !dailyBasic.value.length) return
   pePbChart && pePbChart.dispose()
-  pePbChart = echarts.init(pePbEl.value)
+  pePbChart = initChart(pePbEl.value)
   // 按交易日升序
   const rows = [...dailyBasic.value].reverse()
   const dates = rows.map((r) => r.trade_date)
@@ -1069,7 +1069,7 @@ function renderValuationCharts() {
   const dates = rows.map((r) => r.trade_date)
   const draw = (el, key, stat, name) => {
     if (!el) return null
-    const c = echarts.init(el)
+    const c = initChart(el)
     const data = rows.map((r) => (r[key] != null && r[key] > 0 ? +Number(r[key]).toFixed(2) : '-'))
     const qline = (v, label, color) => ({
       yAxis: v, label: { formatter: label, fontSize: 10, color },
@@ -1110,7 +1110,7 @@ function renderValuationCharts() {
 function renderMfChart() {
   if (!mfEl.value || !moneyflow.value.length) return
   mfChart && mfChart.dispose()
-  mfChart = echarts.init(mfEl.value)
+  mfChart = initChart(mfEl.value)
   const rows = [...moneyflow.value].reverse()
   const dates = rows.map((r) => r.trade_date)
   const net = rows.map((r) => (r.net_mf_amount != null ? +Number(r.net_mf_amount).toFixed(2) : 0))
@@ -1131,7 +1131,7 @@ function renderMfChart() {
 }
 
 onMounted(() => {
-  chart = echarts.init(chartEl.value)
+  chart = initChart(chartEl.value)
   window.addEventListener('resize', onResize)
   loadAll()
 })
@@ -1152,7 +1152,7 @@ onBeforeUnmount(() => {
 function renderMarginDetailChart() {
   if (!marginDetailEl.value || !marginDetail.value.length) return
   marginDetailChart && marginDetailChart.dispose()
-  marginDetailChart = echarts.init(marginDetailEl.value)
+  marginDetailChart = initChart(marginDetailEl.value)
   const rows = [...marginDetail.value].reverse()
   const dates = rows.map((r) => r.trade_date)
   const pick = (k) => rows.map((r) => (r[k] != null ? +Number(r[k]).toFixed(2) : '-'))
@@ -1169,11 +1169,11 @@ function renderMarginDetailChart() {
     series: [
       {
         name: '融资余额(万)', type: 'line', data: pick('rzye'), smooth: true, showSymbol: false,
-        lineStyle: { width: 1.5 }, itemStyle: { color: '#ef232a' },
+        lineStyle: { width: 1.5 }, itemStyle: { color: '#e5484d' },
       },
       {
         name: '融券余额(万)', type: 'line', data: pick('rqye'), smooth: true, showSymbol: false,
-        lineStyle: { width: 1.5 }, yAxisIndex: 1, itemStyle: { color: '#165dff' },
+        lineStyle: { width: 1.5 }, yAxisIndex: 1, itemStyle: { color: '#2f6bff' },
       },
     ],
   })
@@ -1182,7 +1182,7 @@ function renderMarginDetailChart() {
 function renderCyqChart() {
   if (!cyqEl.value || !cyq.value.length) return
   cyqChart && cyqChart.dispose()
-  cyqChart = echarts.init(cyqEl.value)
+  cyqChart = initChart(cyqEl.value)
   const rows = [...cyq.value].reverse()
   const dates = rows.map((r) => r.trade_date)
   const pick = (k) => rows.map((r) => (r[k] != null ? +Number(r[k]).toFixed(2) : '-'))
@@ -1199,11 +1199,11 @@ function renderCyqChart() {
     series: [
       {
         name: '获利盘比例(%)', type: 'line', data: pick('winner_rate'), smooth: true, showSymbol: false,
-        lineStyle: { width: 1.5 }, itemStyle: { color: '#ef232a' },
+        lineStyle: { width: 1.5 }, itemStyle: { color: '#e5484d' },
       },
       {
         name: '平均成本', type: 'line', data: pick('weight_avg'), smooth: true, showSymbol: false,
-        yAxisIndex: 1, lineStyle: { width: 1.5 }, itemStyle: { color: '#165dff' },
+        yAxisIndex: 1, lineStyle: { width: 1.5 }, itemStyle: { color: '#2f6bff' },
       },
       {
         name: '50%成本', type: 'line', data: pick('cost_50pct'), smooth: true, showSymbol: false,
@@ -1216,7 +1216,7 @@ function renderCyqChart() {
 function renderHkHoldChart() {
   if (!hkHoldEl.value || !hkHold.value.length) return
   hkHoldChart && hkHoldChart.dispose()
-  hkHoldChart = echarts.init(hkHoldEl.value)
+  hkHoldChart = initChart(hkHoldEl.value)
   const rows = [...hkHold.value].reverse()
   const dates = rows.map((r) => r.trade_date)
   const pick = (k) => rows.map((r) => (r[k] != null ? +Number(r[k]).toFixed(2) : '-'))
@@ -1233,13 +1233,26 @@ function renderHkHoldChart() {
     series: [
       {
         name: '持股数量(股)', type: 'line', data: pick('vol'), smooth: true, showSymbol: false,
-        lineStyle: { width: 1.5 }, itemStyle: { color: '#ef232a' },
+        lineStyle: { width: 1.5 }, itemStyle: { color: '#e5484d' },
       },
       {
         name: '持股占比(%)', type: 'line', data: pick('ratio'), smooth: true, showSymbol: false,
-        yAxisIndex: 1, lineStyle: { width: 1.5 }, itemStyle: { color: '#165dff' },
+        yAxisIndex: 1, lineStyle: { width: 1.5 }, itemStyle: { color: '#2f6bff' },
       },
     ],
   })
 }
 </script>
+
+<style scoped>
+.stock-head { overflow: hidden; }
+.stock-head :deep(.arco-card-header) {
+  background: linear-gradient(135deg, #1c2547 0%, #2a3560 100%);
+  border-bottom: none !important;
+  padding: 16px 20px;
+}
+.stock-head :deep(.arco-card-header-title) { color: #fff !important; }
+.stock-title { font-size: 18px; font-weight: 700; letter-spacing: 0.03em; }
+.stock-head :deep(.arco-btn) { border-color: rgba(255,255,255,0.25); color: #fff; background: rgba(255,255,255,0.08); }
+.stock-head :deep(.arco-btn:hover) { background: rgba(255,255,255,0.16); }
+</style>

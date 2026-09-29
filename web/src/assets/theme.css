@@ -1,0 +1,116 @@
+/* ============================================================
+   股票数据管道 · 设计系统
+   风格：深海军蓝侧边栏 + 鎏金点缀 + 浅色卡片内容区
+   涨跌语义：中国市场习惯（红涨绿跌）
+   ============================================================ */
+:root {
+  /* 涨跌语义 */
+  --rise: #e5484d;
+  --rise-soft: #fdecec;
+  --fall: #18a058;
+  --fall-soft: #e8f7ef;
+  --flat: #86909c;
+
+  /* 品牌 */
+  --ink: #1a2340;          /* 侧边栏深海军蓝 */
+  --ink-2: #222d52;
+  --ink-3: #2c3a68;
+  --gold: #d3a24a;         /* 鎏金点缀 */
+  --gold-soft: rgba(211, 162, 74, 0.14);
+  --accent: #2f6bff;       /* 操作蓝 */
+
+  /* 浅色内容区 */
+  --bg: #eceef3;
+  --card: #ffffff;
+  --text-1: #1d2129;
+  --text-2: #4e5969;
+  --text-3: #86909c;
+  --border: #e5e7ee;
+  --radius: 12px;
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05), 0 4px 16px rgba(16, 24, 40, 0.06);
+}
+
+/* ---------- 基础 ---------- */
+html, body, #app {
+  height: 100%;
+}
+body {
+  margin: 0;
+  color: var(--text-1);
+  background: var(--bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+/* 价格数字等宽对齐 */
+.num, .arco-statistic-value, td {
+  font-variant-numeric: tabular-nums;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: #c9cdd4; border-radius: 6px; border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- 卡片 ---------- */
+.arco-card {
+  border-radius: var(--radius) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--shadow-card);
+}
+.arco-card-header {
+  border-bottom: 1px solid var(--border) !important;
+}
+.arco-card-header-title {
+  font-weight: 650 !important;
+  font-size: 15px !important;
+  letter-spacing: 0.02em;
+}
+
+/* ---------- 表格 ---------- */
+.arco-table-th {
+  background: #f7f8fa !important;
+  color: var(--text-2) !important;
+  font-weight: 600 !important;
+}
+.arco-table-td { border-bottom: 1px solid #f0f1f5 !important; }
+.arco-table-tr:hover .arco-table-td { background: #f7f9ff !important; }
+
+/* ---------- Tabs ---------- */
+.arco-tabs-nav-tab { font-weight: 600; }
+.arco-tabs-tab-active { color: var(--accent) !important; }
+.arco-tabs-nav-ink { background-color: var(--accent) !important; }
+
+/* ---------- 统计数字 ---------- */
+.arco-statistic-title { color: var(--text-3) !important; font-size: 12px !important; }
+.arco-statistic-value { font-weight: 700 !important; }
+
+/* ---------- 涨跌文字 ---------- */
+.rise { color: var(--rise); }
+.fall { color: var(--fall); }
+.rise-bg { background: var(--rise-soft); }
+.fall-bg { background: var(--fall-soft); }
+
+/* ---------- 通用小组件 ---------- */
+.page-wrap { max-width: 1440px; margin: 0 auto; }
+.section-title {
+  font-size: 15px; font-weight: 650; letter-spacing: 0.02em;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-title::before {
+  content: ""; width: 4px; height: 16px; border-radius: 2px;
+  background: linear-gradient(180deg, var(--gold), #b9862f);
+}
+.muted { color: var(--text-3); font-size: 12px; }
+.kv-label { color: var(--text-3); font-size: 12px; }
+.kv-value { font-weight: 600; font-size: 13px; }
+
+/* 涨跌幅小徽章 */
+.pct-badge {
+  display: inline-block; min-width: 64px; text-align: center;
+  padding: 2px 8px; border-radius: 6px; font-weight: 650; font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.pct-badge.rise { background: var(--rise-soft); color: var(--rise); }
+.pct-badge.fall { background: var(--fall-soft); color: var(--fall); }

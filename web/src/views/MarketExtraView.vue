@@ -178,7 +178,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import * as echarts from 'echarts'
+import { echarts, initChart } from '../utils/echarts-theme.js'
 import { fmtDateLocal as fmt } from '../utils/date.js'
 
 const indexOptions = [
@@ -311,7 +311,7 @@ async function loadHsgtTop10() {
 function renderIndexChart() {
   if (!indexEl.value || !indexBars.value.length) return
   indexChart && indexChart.dispose()
-  indexChart = echarts.init(indexEl.value)
+  indexChart = initChart(indexEl.value)
   const rows = [...indexBars.value].reverse()
   const dates = rows.map((r) => r.date)
   const candles = rows.map((r) => [r.open, r.close, r.low, r.high])
@@ -352,7 +352,7 @@ function renderIndexChart() {
 function renderHsgtFlowChart() {
   if (!hsgtFlowEl.value || !hsgtFlow.value.length) return
   hsgtFlowChart && hsgtFlowChart.dispose()
-  hsgtFlowChart = echarts.init(hsgtFlowEl.value)
+  hsgtFlowChart = initChart(hsgtFlowEl.value)
   const rows = [...hsgtFlow.value].reverse()
   const dates = rows.map((r) => r.trade_date)
   const pick = (k) => rows.map((r) => (r[k] != null ? +Number(r[k]).toFixed(2) : '-'))
@@ -382,7 +382,7 @@ function renderHsgtFlowChart() {
 function renderMarginChart() {
   if (!marginEl.value || !margin.value.length) return
   marginChart && marginChart.dispose()
-  marginChart = echarts.init(marginEl.value)
+  marginChart = initChart(marginEl.value)
   const rows = [...margin.value].reverse()
   const ids = [...new Set(rows.map((r) => r.exchange_id))]
   const dates = [...new Set(rows.map((r) => r.trade_date))].sort()

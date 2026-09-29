@@ -30,7 +30,7 @@ import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconLeft } from '@arco-design/web-vue/es/icon'
-import * as echarts from 'echarts'
+import { echarts, initChart } from '../utils/echarts-theme.js'
 import WatchStar from '../components/WatchStar.vue'
 import { fmtDateLocal as fmt } from '../utils/date.js'
 
@@ -216,7 +216,7 @@ async function loadBars() {
 function onResize() { chart && chart.resize() }
 
 onMounted(() => {
-  chart = echarts.init(chartEl.value)
+  chart = initChart(chartEl.value)
   window.addEventListener('resize', onResize)
   loadBars()
 })

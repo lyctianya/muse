@@ -3,9 +3,12 @@
     <!-- 市场概览卡片 -->
     <a-row :gutter="16" style="margin-bottom: 16px">
       <a-col v-for="m in markets" :key="m.key" :span="8">
-        <a-card :title="m.label" size="small" :loading="loading">
+        <a-card :loading="loading" class="market-card">
+          <template #title>
+            <span class="section-title">{{ m.label }}</span>
+          </template>
           <template #extra>
-            <a-tag size="small">{{ overviews[m.key]?.trade_date || '--' }}</a-tag>
+            <a-tag size="small" color="arcoblue">{{ overviews[m.key]?.trade_date || '--' }}</a-tag>
           </template>
           <div v-if="overviews[m.key]?.found">
             <a-statistic
@@ -15,17 +18,17 @@
             />
             <a-row :gutter="8">
               <a-col :span="8">
-                <a-statistic title="上涨" :value="overviews[m.key].up" value-style="color: #ef232a" />
+                <a-statistic title="上涨" :value="overviews[m.key].up" value-style="color: var(--rise)" />
               </a-col>
               <a-col :span="8">
-                <a-statistic title="下跌" :value="overviews[m.key].down" value-style="color: #14b143" />
+                <a-statistic title="下跌" :value="overviews[m.key].down" value-style="color: var(--fall)" />
               </a-col>
               <a-col :span="8">
                 <a-statistic title="平盘" :value="overviews[m.key].flat" />
               </a-col>
             </a-row>
             <div :data-market="m.key" style="width: 100%; height: 160px; margin-top: 8px"></div>
-            <div style="color: #86909c; font-size: 12px; margin-top: 4px">
+            <div class="muted" style="margin-top: 4px">
               上市 {{ overviews[m.key].listed }} 家 · 有行情 {{ overviews[m.key].total }} 家
             </div>
           </div>
@@ -35,10 +38,10 @@
     </a-row>
 
     <!-- 涨跌排行 -->
-    <a-card size="small" style="margin-bottom: 16px">
+    <a-card style="margin-bottom: 16px">
       <template #title>
         <a-space>
-          <span>涨跌排行</span>
+          <span class="section-title">涨跌排行</span>
           <a-select v-model="rankMarket" style="width: 100px" @change="loadRank">
             <a-option value="cn">A股</a-option>
             <a-option value="hk">港股</a-option>
@@ -48,7 +51,7 @@
       </template>
       <a-row :gutter="16">
         <a-col :span="12">
-          <div style="font-weight: 600; color: #ef232a; margin-bottom: 8px">涨幅榜</div>
+          <div class="rank-head rise">▲ 涨幅榜</div>
           <a-table :data="gainers" :pagination="false" size="small">
             <template #columns>
               <a-table-column title="代码" data-index="symbol" :width="90">
@@ -60,16 +63,16 @@
               <a-table-column title="最新价" data-index="close" :width="100">
                 <template #cell="{ record }">{{ fmtNum(record.close) }}</template>
               </a-table-column>
-              <a-table-column title="涨跌幅" data-index="pct_change" :width="100">
+              <a-table-column title="涨跌幅" data-index="pct_change" :width="110">
                 <template #cell="{ record }">
-                  <span style="color: #ef232a">+{{ record.pct_change.toFixed(2) }}%</span>
+                  <span class="pct-badge rise">+{{ record.pct_change.toFixed(2) }}%</span>
                 </template>
               </a-table-column>
             </template>
           </a-table>
         </a-col>
         <a-col :span="12">
-          <div style="font-weight: 600; color: #14b143; margin-bottom: 8px">跌幅榜</div>
+          <div class="rank-head fall">▼ 跌幅榜</div>
           <a-table :data="losers" :pagination="false" size="small">
             <template #columns>
               <a-table-column title="代码" data-index="symbol" :width="90">
@@ -81,9 +84,9 @@
               <a-table-column title="最新价" data-index="close" :width="100">
                 <template #cell="{ record }">{{ fmtNum(record.close) }}</template>
               </a-table-column>
-              <a-table-column title="涨跌幅" data-index="pct_change" :width="100">
+              <a-table-column title="涨跌幅" data-index="pct_change" :width="110">
                 <template #cell="{ record }">
-                  <span style="color: #14b143">{{ record.pct_change.toFixed(2) }}%</span>
+                  <span class="pct-badge fall">{{ record.pct_change.toFixed(2) }}%</span>
                 </template>
               </a-table-column>
             </template>
@@ -93,9 +96,10 @@
     </a-card>
 
     <!-- 行业分布 -->
-    <a-card title="行业分布（A股）" size="small">
+    <a-card>
+      <template #title><span class="section-title">行业分布（A股）</span></template>
       <template #extra>
-        <span style="color: #86909c; font-size: 12px">需回填基本面数据后展示</span>
+        <span class="muted">需回填基本面数据后展示</span>
       </template>
       <div v-if="sectors.length" ref="sectorEl" style="width: 100%; height: 380px"></div>
       <a-empty v-else description="暂无行业数据（基本面回填后自动展示）" />
@@ -103,11 +107,20 @@
   </div>
 </template>
 
+<style scoped>
+.rank-head {
+  font-weight: 700; font-size: 14px; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 6px;
+}
+.rank-head.rise { color: var(--rise); }
+.rank-head.fall { color: var(--fall); }
+</style>
+
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import * as echarts from 'echarts'
+import { echarts, initChart } from '../utils/echarts-theme.js'
 
 const router = useRouter()
 const markets = [
@@ -148,14 +161,21 @@ function goChart(record) {
   })
 }
 
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+}
+
 function renderPies() {
   pieCharts.forEach((c) => c.dispose())
   pieCharts.length = 0
+  const rise = cssVar('--rise') || '#e5484d'
+  const fall = cssVar('--fall') || '#18a058'
+  const flat = cssVar('--flat') || '#86909c'
   document.querySelectorAll('[data-market]').forEach((el) => {
     const key = el.getAttribute('data-market')
     const o = overviews.value[key]
     if (!o || !o.found) return
-    const c = echarts.init(el)
+    const c = initChart(el)
     c.setOption({
       animation: false,
       tooltip: { trigger: 'item', formatter: '{b}: {c} 家 ({d}%)' },
@@ -163,9 +183,9 @@ function renderPies() {
         type: 'pie', radius: ['45%', '70%'],
         label: { show: false },
         data: [
-          { value: o.up, name: '上涨', itemStyle: { color: '#ef232a' } },
-          { value: o.flat, name: '平盘', itemStyle: { color: '#86909c' } },
-          { value: o.down, name: '下跌', itemStyle: { color: '#14b143' } },
+          { value: o.up, name: '上涨', itemStyle: { color: rise } },
+          { value: o.flat, name: '平盘', itemStyle: { color: flat } },
+          { value: o.down, name: '下跌', itemStyle: { color: fall } },
         ],
       }],
     })
@@ -176,7 +196,7 @@ function renderPies() {
 function renderSectors() {
   if (!sectors.value.length || !sectorEl.value) return
   sectorChart && sectorChart.dispose()
-  sectorChart = echarts.init(sectorEl.value)
+  sectorChart = initChart(sectorEl.value)
   const top = sectors.value.slice(0, 20)
   sectorChart.setOption({
     animation: false,
