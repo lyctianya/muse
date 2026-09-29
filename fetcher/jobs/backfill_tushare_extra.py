@@ -42,6 +42,8 @@ def main() -> None:
                     help="只跑哪一类（默认 all）")
     ap.add_argument("--from-date", default="",
                     help="起始日期 YYYY-MM-DD（断点续跑）")
+    ap.add_argument("--force", action="store_true",
+                    help="忽略水位，强制重跑")
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -53,10 +55,16 @@ def main() -> None:
     if not config.TUSHARE_TOKEN:
         raise SystemExit("需要配置 TUSHARE_TOKEN 环境变量")
 
+    from fetcher.sync_freshness import should_skip_job
+
     names = list(JOBS) if args.only == "all" else [args.only]
     t0 = time.time()
     for name in names:
         label, fn = JOBS[name]
+        skip, reason = should_skip_job(name, force=args.force or bool(args.from_date))
+        if skip:
+            log.info("跳过：%s（%s）", label, reason)
+            continue
         log.info("开始：%s", label)
         try:
             fn(args.from_date)

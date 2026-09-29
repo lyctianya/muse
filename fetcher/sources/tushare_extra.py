@@ -331,12 +331,22 @@ def _upsert_moneyflow_suspend_day(d: str) -> int:
 
 
 def backfill_moneyflow_suspend(from_date: str = "") -> None:
-    """资金流向 + 停复牌：按交易日增量并发。"""
-    # 取两表较早的 max，避免 suspend 落后被跳过
+    """资金流向 + 停复牌：按交易日增量并发。
+
+    suspend 常年可能为空（无停牌）；不能因为 suspend 无水位就把起点拉回 2 年前。
+    """
     s1 = _incremental_start(from_date, "moneyflow", "trade_date", _cutoff())
-    s2 = _incremental_start(from_date, "suspend", "trade_date", _cutoff())
-    start = min(s1, s2)
-    log.info("moneyflow/suspend 增量起点 %s（moneyflow=%s suspend=%s）", start, s1, s2)
+    from fetcher import sync_status as ss
+    s2 = ss.get_latest("suspend")
+    if from_date:
+        start = s1
+    elif s2 is None:
+        start = s1
+        log.info("suspend 无水位，按 moneyflow 起点 %s 增量（不回退两年）", start)
+    else:
+        start = min(s1, s2)
+        log.info("moneyflow/suspend 增量起点 %s（moneyflow=%s suspend=%s）",
+                 start, s1, s2)
     _parallel_map(_trade_days(start, date.today()), _upsert_moneyflow_suspend_day,
                   "moneyflow/suspend")
 
@@ -348,13 +358,20 @@ def backfill_dividend(from_date: str = "") -> None:
     _parallel_map(_trade_days(start, date.today()), _upsert_dividend, "dividend")
 
 
-def backfill_forecast_express(from_date: str = "") -> None:
-    """业绩预告 + 快报，近2年（VIP 按季度批量，8 次调用）。"""
-    from fetcher.sources.tushare_fundamentals import _periods
-    periods = _periods()
+def backfill_forecast_express(from_date: str = "", *, force: bool = False) -> None:
+    """业绩预告 + 快报，近2年（VIP 按季度批量）。按 sync_status 水位跳过已有季度。"""
+    from fetcher.sources.tushare_fundamentals import _vip_periods
     if from_date:
+        from fetcher.sources.tushare_fundamentals import _periods
+        periods = _periods()
         fd = _to_date(from_date)
-        periods = [p for p in periods if _to_date(p) >= fd]
+        periods = [p for p in periods if _to_date(p) and _to_date(p) >= fd]
+    else:
+        periods = _vip_periods(
+            force=force, tables=["forecast", "express"])
+    if not periods:
+        log.info("forecast/express 水位已覆盖，跳过")
+        return
     log.info("forecast/express 待抓取 %d 个季度", len(periods))
     t0 = time.time()
     tf = te = 0
@@ -363,3 +380,8 @@ def backfill_forecast_express(from_date: str = "") -> None:
         te += _upsert_express(p)
     log.info("forecast/express 完成：forecast %d 行，express %d 行，%.1fs",
              tf, te, time.time() - t0)
+    try:
+        from fetcher import sync_status as ss
+        ss.refresh_tables(["forecast", "express"])
+    except Exception as exc:  # noqa: BLE001
+        log.warning("刷新 forecast/express 水位失败：%s", exc)

@@ -64,8 +64,18 @@ def _needs_update(date_col: str, latest, rows: int) -> bool:
     today = date.today()
     if latest is None:
         return rows == 0
+    if rows == 0:
+        return True
     if date_col in DAILY_COLS:
         return latest < today
+    # 季报：覆盖最近已结束季度即新鲜
+    try:
+        from fetcher.sync_freshness import _latest_completed_quarter
+        q = _latest_completed_quarter()
+        if q is not None:
+            return latest < q
+    except Exception:  # noqa: BLE001
+        pass
     qm = ((today.month - 1) // 3) * 3 + 1
     quarter_start = date(today.year, qm, 1)
     return latest < quarter_start
