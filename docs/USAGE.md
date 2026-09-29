@@ -218,13 +218,13 @@ python scripts/import_full_parquet.py --dir ./release --db <连接串>
 
 ```bash
 curl "http://localhost:8000/api/health"
-curl "http://localhost:8000/api/symbols?market=cn&query=贵州茅台"
-curl "http://localhost:8000/api/bars?market=cn&symbol=600519&from=2024-01-01&to=2026-09-29"
-curl "http://localhost:8000/api/company?market=cn&symbol=600519"
-curl "http://localhost:8000/api/financials?market=cn&symbol=600519&type=income"
-curl "http://localhost:8000/api/holder-trades?market=cn&symbol=600519"
-curl "http://localhost:8000/api/cyq?market=cn&symbol=600519&limit=60"
-curl "http://localhost:8000/api/sync/status"
+curl "http://localhost:8000/api/stock/symbols?market=cn&query=贵州茅台"
+curl "http://localhost:8000/api/stock/bars?market=cn&symbol=600519&from=2024-01-01&to=2026-09-29"
+curl "http://localhost:8000/api/stock/company?market=cn&symbol=600519"
+curl "http://localhost:8000/api/stock/financials?market=cn&symbol=600519&type=income"
+curl "http://localhost:8000/api/stock/holder-trades?market=cn&symbol=600519"
+curl "http://localhost:8000/api/stock/cyq?market=cn&symbol=600519&limit=60"
+curl "http://localhost:8000/api/stock/sync/status"
 ```
 
 完整路由见 [设计文档](DESIGN.md) 第 5 节。

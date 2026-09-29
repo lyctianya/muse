@@ -1,0 +1,114 @@
+"""股东相关：十大股东、股权质押、股东人数、股东增减持。"""
+from fastapi import APIRouter, Query
+
+from api.platform.deps import _conn
+
+router = APIRouter()
+
+
+@router.get("/holders")
+def get_holders(
+    market: str = Query(default="cn"),
+    symbol: str = Query(description="股票代码，如 600519"),
+    type: str = Query(default="top10", description="top10|float10",
+                      pattern="^(top10|float10)$"),
+):
+    """前十大股东 / 前十大流通股东：按报告期倒序。"""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT report_date, rank, holder_name, hold_shares, hold_ratio,"
+                " change FROM top_holders"
+                " WHERE market = %s AND symbol = %s AND holder_type = %s"
+                " ORDER BY report_date DESC, rank",
+                (market, symbol, type),
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "report_date": r[0].isoformat(), "rank": r[1],
+            "holder_name": r[2], "hold_shares": r[3],
+            "hold_ratio": r[4], "change": r[5],
+        }
+        for r in rows
+    ]
+
+
+@router.get("/pledge")
+def get_pledge(
+    market: str = Query(default="cn"),
+    symbol: str = Query(description="股票代码，如 600519"),
+):
+    """股权质押：按统计日期倒序。"""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT stat_date, pledge_ratio, pledged_shares, data"
+                " FROM pledge_info WHERE market = %s AND symbol = %s"
+                " ORDER BY stat_date DESC",
+                (market, symbol),
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "stat_date": r[0].isoformat(), "pledge_ratio": r[1],
+            "pledged_shares": r[2], "data": r[3],
+        }
+        for r in rows
+    ]
+
+
+@router.get("/holder-numbers")
+def get_holder_numbers(
+    market: str = Query(default="cn"),
+    symbol: str = Query(description="股票代码，如 600519"),
+):
+    """股东人数历史序列。"""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT report_date, holder_count, avg_shares FROM holder_number"
+                " WHERE market = %s AND symbol = %s ORDER BY report_date DESC",
+                (market, symbol),
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "report_date": r[0].isoformat(),
+            "holder_count": r[1], "avg_shares": r[2],
+        }
+        for r in rows
+    ]
+
+
+@router.get("/holder-trades")
+def get_holder_trades(
+    market: str = Query(default="cn"),
+    symbol: str = Query(description="股票代码，如 600519"),
+    limit: int = Query(default=100, le=500),
+):
+    """股东增减持记录（Tushare stk_holdertrade）。"""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT holder_name, holder_type, in_de, ann_date,"
+                " change_vol, change_ratio, after_share, after_ratio,"
+                " avg_price, begin_date, close_date FROM holder_trade"
+                " WHERE market = %s AND symbol = %s"
+                " ORDER BY ann_date DESC LIMIT %s",
+                (market, symbol, limit),
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "holder_name": r[0], "holder_type": r[1],
+            "trade_type": "增持" if r[2] == "IN" else ("减持" if r[2] == "DE" else r[2]),
+            "ann_date": r[3].isoformat() if r[3] else None,
+            "trade_date": r[3].isoformat() if r[3] else None,
+            "shares": r[4], "ratio": r[5],
+            "after_share": r[6], "after_ratio": r[7], "price": r[8],
+            "begin_date": r[9].isoformat() if r[9] else None,
+            "close_date": r[10].isoformat() if r[10] else None,
+        }
+        for r in rows
+    ]

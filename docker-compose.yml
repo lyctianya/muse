@@ -40,6 +40,8 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    volumes:
+      - filedata:/app/data/files   # 文件域存储持久化
     ports:
       - "8000:8000"
     depends_on:
@@ -47,3 +49,4 @@ services:
 
 volumes:
   pgdata:
+  filedata:

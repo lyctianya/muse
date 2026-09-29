@@ -50,14 +50,17 @@ INSERT INTO permissions (key, description) VALUES
     ('weeks:download', '周文件下载'),
     ('sync:view', '数据更新查看'),
     ('sync:run', '触发数据回填'),
-    ('users:manage', '用户管理')
+    ('users:manage', '用户管理'),
+    ('files:view', '文件查看 / 下载'),
+    ('files:upload', '文件上传'),
+    ('files:manage', '文件删除管理')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------- 种子：角色 ----------------
 INSERT INTO roles (name, description) VALUES
     ('admin', '管理员：全部权限'),
     ('operator', '运维：除用户管理外全部权限'),
-    ('viewer', '只读：市场概览 / 行情 / 市场深度 / 周文件下载')
+    ('viewer', '只读：市场概览 / 行情 / 市场深度 / 周文件下载 / 文件查看')
 ON CONFLICT (name) DO NOTHING;
 
 -- ---------------- 种子：角色-权限 ----------------
@@ -72,9 +75,9 @@ SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.name = 'operator' AND p.key <> 'users:manage'
 ON CONFLICT DO NOTHING;
 
--- viewer：只读四项
+-- viewer：只读五项
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.name = 'viewer'
-  AND p.key IN ('market:view', 'quotes:view', 'extra:view', 'weeks:download')
+  AND p.key IN ('market:view', 'quotes:view', 'extra:view', 'weeks:download', 'files:view')
 ON CONFLICT DO NOTHING;

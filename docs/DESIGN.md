@@ -124,7 +124,7 @@
 | `daily_fetch` | 每日 05:30 | 名单刷新 + 日线增量 + 除权检测 |
 | `weekly_export` | 每周一 06:10 | 导出上周三市场日线 → `exports/` → GitHub Release（`data-YYYY-Www`） |
 
-Tushare 三模块**不进定时调度**，由 `/api/sync/run`（/sync 页一键回填）按需触发（后台子进程，全局单跑）。
+Tushare 三模块**不进定时调度**，由 `/api/stock/sync/run`（/sync 页一键回填）按需触发（后台子进程，全局单跑）。
 
 ### 4.4 同步水位（`sync_status` + `sync_registry.py` + `sync_freshness.py`）
 
@@ -143,7 +143,7 @@ Tushare 三模块**不进定时调度**，由 `/api/sync/run`（/sync 页一键�
 - 主要路由组：`quotes`（行情）/ `company` / `financials` / `holders` / `market` /
   `tech` / `tushare`（增量6表）/ `tushare_full`（全量27表，26端点）/
   `screener`（选股）/ `valuation`（估值分位）/ `watchlist` / `sync`（数据更新管理）/ `health`
-- 选股器：`GET /api/screener/fields` 取字段元数据 → `POST /api/screener/run`（SQL 先筛 + Python 形态过滤）
+- 选股器：`GET /api/stock/screener/fields` 取字段元数据 → `POST /api/stock/screener/run`（SQL 先筛 + Python 形态过滤）
 
 ---
 
