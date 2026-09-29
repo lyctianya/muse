@@ -309,8 +309,13 @@ def _periods() -> list:
 
 # ---------------------------------------------------------------- 公司基本信息
 
-def upsert_company_info_all() -> int:
+def upsert_company_info_all(*, force: bool = False) -> int:
     """全市场一次性拉取 stock_basic，批量写入 company_info。"""
+    if not force:
+        from fetcher import sync_status as ss
+        if ss.synced_today("company_info"):
+            log.info("company_info 今日已同步，跳过")
+            return 0
     df = _call("stock_basic", exchange="", list_status="L",
                fields="ts_code,symbol,name,area,industry,market,list_date")
     if df is None or df.empty:
@@ -371,16 +376,47 @@ def upsert_company_info_all() -> int:
                  _to_date(row.get("list_date")), _row_json(row)))
             n += 1
     log.info("公司基本信息入库 %d 只（Tushare）", n)
+    try:
+        from fetcher import sync_status as ss
+        ss.refresh_one("company_info")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("刷新 company_info 水位失败：%s", exc)
     return n
 
 
 # ---------------------------------------------------------------- 财务三表 + 指标（VIP 批量）
 
-def backfill_fin_statements_vip() -> dict:
+def _vip_periods(*, force: bool = False, tables: list | None = None) -> list:
+    """近 2 年季度列表；非 force 时按 sync_status 水位裁掉已覆盖季度。"""
+    periods = _periods()
+    if force or not tables:
+        return periods
+    from fetcher import sync_status as ss
+    floor = ss.min_latest(tables)
+    if not floor:
+        return periods
+    kept = []
+    for p in periods:
+        d = _to_date(p)
+        if d and d > floor:
+            kept.append(p)
+    if not kept:
+        log.info("水位已覆盖至 %s，跳过 VIP（tables=%s）", floor, ",".join(tables))
+    else:
+        log.info("VIP 增量：水位 %s，待拉 %d/%d 季 %s",
+                 floor, len(kept), len(periods), kept)
+    return kept
+
+
+def backfill_fin_statements_vip(*, force: bool = False) -> dict:
     """用 *_vip 接口按季度批量拉取三表 + 财务指标（8 个季度，约 32 次调用）。"""
     out = {"income": 0, "balance": 0, "cashflow": 0, "indicator": 0}
     pool = db.get_pool()
-    periods = _periods()
+    fin_tables = ["fin_income", "fin_balance", "fin_cashflow", "fin_indicator"]
+    periods = _vip_periods(force=force, tables=fin_tables)
+    if not periods:
+        out["skipped"] = True
+        return out
     log.info("VIP 批量拉取 %d 个季度：%s", len(periods), periods)
 
     for period in periods:
@@ -498,6 +534,11 @@ def backfill_fin_statements_vip() -> dict:
             log.warning("fina_indicator_vip %s 失败：%s", period, exc)
 
         log.info("季度 %s 完成，累计 %s", period, out)
+    try:
+        from fetcher import sync_status as ss
+        ss.refresh_tables(fin_tables)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("刷新财务表水位失败：%s", exc)
     return out
 
 
@@ -727,12 +768,15 @@ def _upsert_pledge(symbol: str) -> int:
 _TYPE_CAT = {"P": "按产品", "D": "按地区", "I": "按行业"}
 
 
-def backfill_main_business_vip() -> int:
+def backfill_main_business_vip(*, force: bool = False) -> int:
     """fina_mainbz_vip 按季度+类型批量，写入 main_business 与 fina_mainbz。
 
     约 8 季度 × 3 类型 × 分页，远快于东财逐只（~10s/只）。
     """
-    periods = _periods()
+    periods = _vip_periods(
+        force=force, tables=["main_business", "fina_mainbz"])
+    if not periods:
+        return 0
     total = 0
     pool = db.get_pool()
     log.info("fina_mainbz_vip 批量 %d 个季度 × 3 类型", len(periods))
@@ -826,6 +870,11 @@ def backfill_main_business_vip() -> int:
                 offset += n
             log.info("fina_mainbz_vip %s/%s 累计 %d 行", period, bz_type, total)
     log.info("fina_mainbz_vip 完成：%d 行", total)
+    try:
+        from fetcher import sync_status as ss
+        ss.refresh_tables(["main_business", "fina_mainbz"])
+    except Exception as exc:  # noqa: BLE001
+        log.warning("刷新主营构成水位失败：%s", exc)
     return total
 
 

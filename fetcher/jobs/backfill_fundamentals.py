@@ -61,7 +61,8 @@ def backfill_market_wide() -> None:
              n1, n2, time.time() - t0)
 
 
-def backfill_symbols(symbols: list, source: str = "eastmoney") -> None:
+def backfill_symbols(symbols: list, source: str = "eastmoney",
+                     *, force: bool = False) -> None:
     total = len(symbols)
     ok = fail = 0
     t0 = time.time()
@@ -69,45 +70,65 @@ def backfill_symbols(symbols: list, source: str = "eastmoney") -> None:
     skip_main = False
     if source == "tushare":
         from fetcher.sources import tushare_fundamentals as ts_fund
-        # 公司基本信息全市场一次拉取
+        # 公司基本信息全市场一次拉取（今日已同步则跳过）
         try:
-            ts_fund.upsert_company_info_all()
+            ts_fund.upsert_company_info_all(force=force)
         except Exception as exc:  # noqa: BLE001
             log.warning("Tushare 公司基本信息批量拉取失败：%s", exc)
-        # 财务三表 + 指标：VIP 接口按季度批量（8 季度约 32 次调用）
+        # 财务三表 + 指标：VIP 按水位增量季度
         try:
-            r = ts_fund.backfill_fin_statements_vip()
-            log.info("VIP 三表+指标批量完成：%s", r)
+            r = ts_fund.backfill_fin_statements_vip(force=force)
+            if r.get("skipped"):
+                log.info("VIP 三表+指标：水位已覆盖，跳过")
+            else:
+                log.info("VIP 三表+指标批量完成：%s", r)
             skip_fin = True
         except Exception as exc:  # noqa: BLE001
             log.warning("VIP 三表批量失败，逐只拉取时补：%s", exc)
-        # 主营构成：VIP 按季度批量（替代东财逐只，~10s/只）
+        # 主营构成：VIP 按水位增量季度
         try:
-            n = ts_fund.backfill_main_business_vip()
-            log.info("VIP 主营构成批量完成：%d 行", n)
+            n = ts_fund.backfill_main_business_vip(force=force)
+            if n == 0 and not force:
+                log.info("VIP 主营构成：水位已覆盖或无新季度，跳过")
+            else:
+                log.info("VIP 主营构成批量完成：%d 行", n)
             skip_main = True
         except Exception as exc:  # noqa: BLE001
             log.warning("VIP 主营构成批量失败，将跳过东财补充（请检查积分/中转）：%s",
                         exc)
             skip_main = True  # 仍不走东财，避免拖死全流程
-        # 股东类：任一表未追上近半年则纳入待拉；并发增量
+        # 股东类增量：按报告期水位判断，避免「已有上季数据却因 180 天阈值被重拉」
+        # - top_holders：需覆盖最新已结束季度
+        # - holder_number：披露滞后，覆盖上一季度即可
+        # - pledge_info：大量股票本无质押，不作为「必须重拉」条件
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        from fetcher.sources.tushare_fundamentals import _symbol_max_dates
-        from datetime import timedelta
-        fresh_cut = date.today() - timedelta(days=180)
+        from fetcher.sources.tushare_fundamentals import (
+            _periods, _symbol_max_dates, _to_date,
+        )
+
+        periods = _periods()
+        q_latest = _to_date(periods[0]) if periods else date.today()
+        q_prev = _to_date(periods[1]) if len(periods) > 1 else q_latest
+
         max_holders = _symbol_max_dates("top_holders", "report_date")
         max_hnum = _symbol_max_dates("holder_number", "report_date")
-        max_pledge = _symbol_max_dates("pledge_info", "stat_date")
 
         def _stale(sym: str) -> bool:
-            for mx in (max_holders.get(sym), max_hnum.get(sym), max_pledge.get(sym)):
-                if mx is None or mx < fresh_cut:
-                    return True
+            th = max_holders.get(sym)
+            if th is None or (q_latest and th < q_latest):
+                return True
+            hn = max_hnum.get(sym)
+            if hn is None or (q_prev and hn < q_prev):
+                return True
             return False
 
         todo = [(s, n) for s, n in symbols if _stale(s)]
-        log.info("股东/户数/质押增量：共 %d 只，跳过已有 %d，待拉 %d，workers=%d",
-                 total, total - len(todo), len(todo), config.TUSHARE_WORKERS)
+        log.info(
+            "股东/户数增量：共 %d 只，跳过已有 %d，待拉 %d "
+            "(holders>=%s, hnum>=%s)，workers=%d",
+            total, total - len(todo), len(todo),
+            q_latest, q_prev, config.TUSHARE_WORKERS,
+        )
 
         _skip_fin = skip_fin
         _skip_main = skip_main
@@ -163,6 +184,8 @@ def main() -> None:
                     help="数据源：tushare（默认，批量+增量）或 eastmoney")
     ap.add_argument("--check-token", action="store_true",
                     help="校验 Tushare token 有效性后退出")
+    ap.add_argument("--force", action="store_true",
+                    help="忽略 sync_status 水位，强制重拉公司信息/VIP 季度")
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -199,8 +222,9 @@ def main() -> None:
             symbols = [(c, n) for c, n in cn.get_symbols()]
     if args.limit:
         symbols = symbols[:args.limit]
-    log.info("待抓取：%d 只（数据源=%s）", len(symbols), args.source)
-    backfill_symbols(symbols, source=args.source)
+    log.info("待抓取：%d 只（数据源=%s%s）",
+             len(symbols), args.source, "，强制全量" if args.force else "")
+    backfill_symbols(symbols, source=args.source, force=args.force)
     # 全市场维度顺手跑一遍（仅 eastmoney 源）
     if args.source == "eastmoney":
         backfill_market_wide()

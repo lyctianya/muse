@@ -31,17 +31,54 @@ def _safe_ident(name: str) -> bool:
 
 def get_latest(table: str) -> Optional[date]:
     """读 sync_status.latest_date；无记录返回 None。"""
+    row = get_row(table)
+    return row["latest_date"] if row else None
+
+
+def get_row(table: str) -> Optional[dict]:
+    """读单条水位；无记录返回 None。"""
     try:
         with db.get_pool().connection() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT latest_date FROM sync_status WHERE table_name = %s",
+                "SELECT latest_date, row_count, last_synced_at, updated_at "
+                "FROM sync_status WHERE table_name = %s",
                 (table,),
             )
-            row = cur.fetchone()
-            return row[0] if row else None
+            r = cur.fetchone()
+            if not r:
+                return None
+            return {
+                "latest_date": r[0],
+                "row_count": r[1] or 0,
+                "last_synced_at": r[2],
+                "updated_at": r[3],
+            }
     except Exception as exc:  # noqa: BLE001
         log.warning("读 sync_status[%s] 失败：%s", table, exc)
         return None
+
+
+def min_latest(tables: Iterable[str]) -> Optional[date]:
+    """多表 latest_date 的最小值（缺水位的表忽略）；全缺则 None。"""
+    dates = []
+    for t in tables:
+        d = get_latest(t)
+        if d is not None:
+            dates.append(d)
+    return min(dates) if dates else None
+
+
+def synced_today(table: str) -> bool:
+    """last_synced_at 落在今天（且有数据）则视为今日已同步。"""
+    row = get_row(table)
+    if not row or not row.get("last_synced_at") or not row.get("row_count"):
+        return False
+    ts = row["last_synced_at"]
+    try:
+        d = ts.date() if hasattr(ts, "date") else date.fromisoformat(str(ts)[:10])
+    except (TypeError, ValueError):
+        return False
+    return d >= date.today()
 
 
 def get_all() -> dict:
