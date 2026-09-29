@@ -9,7 +9,7 @@ import logging
 import sys
 
 from fetcher import config, sync_status as ss
-from fetcher.sync_freshness import audit_report, format_audit
+from fetcher.sync_freshness import PER_SYMBOL_JOBS, audit_report, format_audit
 from fetcher.sync_registry import JOB_TABLES
 
 log = logging.getLogger("audit_sync_status")
@@ -44,10 +44,7 @@ def main() -> None:
     rows = audit_report(jobs=jobs)
     print(format_audit(rows))
     skip_n = sum(1 for r in rows if r.get("skip_ok"))
-    pull_n = sum(1 for r in rows if not r.get("skip_ok") and r["job"] not in (
-        "mainbz", "fina_audit", "managers", "share_float",
-        "pledge_detail", "cyq_perf", "fundamentals",
-    ))
+    pull_n = sum(1 for r in rows if not r.get("skip_ok") and r["job"] not in PER_SYMBOL_JOBS)
     internal_n = len(rows) - skip_n - pull_n
     print()
     print(f"合计 {len(rows)} 个任务：可跳过 {skip_n}，需拉取 {pull_n}，"

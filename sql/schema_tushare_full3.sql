@@ -68,7 +68,10 @@ CREATE TABLE IF NOT EXISTS repurchase (
     price_low  DOUBLE PRECISION,-- 回购价格下限
     price_high DOUBLE PRECISION,-- 回购价格上限
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (market, symbol, ann_date)
+    PRIMARY KEY (market, symbol, ann_date, proc)
+    -- 同一天多条回购公告（预案/进展/完成）用 proc 区分，避免互相覆盖
+    -- 存量库迁移：ALTER TABLE repurchase DROP CONSTRAINT repurchase_pkey;
+    --            ALTER TABLE repurchase ADD PRIMARY KEY (market, symbol, ann_date, proc);
 );
 CREATE INDEX IF NOT EXISTS idx_repurchase_symbol ON repurchase (market, symbol, ann_date DESC);
 

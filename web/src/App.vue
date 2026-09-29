@@ -16,7 +16,7 @@
       </div>
     </a-layout-header>
     <a-layout-content style="padding: 24px; background: #f2f3f5">
-      <router-view />
+      <router-view :key="$route.fullPath" />
     </a-layout-content>
   </a-layout>
 </template>

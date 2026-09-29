@@ -54,7 +54,7 @@ def _latest_completed_quarter() -> Optional[date]:
     return date(today.year, q_start_month, 1) - timedelta(days=1)
 
 
-def _needs_update(date_col: Optional[str], latest, rows: int) -> bool:
+def needs_update(date_col: Optional[str], latest, rows: int) -> bool:
     today = date.today()
     if latest is None:
         return rows == 0
@@ -96,7 +96,7 @@ def table_status(table: str) -> dict:
             needs, reason = False, "今日已同步"
         else:
             needs, reason = True, "无日期列且非今日同步"
-    elif _needs_update(dc, latest, rows):
+    elif needs_update(dc, latest, rows):
         needs, reason = True, f"最新 {latest} 落后"
     else:
         needs, reason = False, "已覆盖到最新"
@@ -206,3 +206,7 @@ def format_audit(rows: list[dict]) -> str:
                 f"latest={t['latest_date'] or '-':<12} {t['reason']}"
             )
     return "\n".join(lines)
+
+
+# 向后兼容别名
+_needs_update = needs_update

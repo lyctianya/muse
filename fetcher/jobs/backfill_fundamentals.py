@@ -156,6 +156,8 @@ def backfill_symbols(symbols: list, source: str = "eastmoney",
                              done, len(todo), ok, fail, time.time() - t0)
         log.info("基本面回填完成：待拉 %d，成功 %d，失败 %d，总耗时 %.1fs",
                  len(todo), ok, fail, time.time() - t0)
+        if fail:
+            raise RuntimeError(f"基本面回填 {fail} 只失败，不刷新水位")
         return
 
     fetch_fn = cn_fundamentals.fetch_one
@@ -171,6 +173,8 @@ def backfill_symbols(symbols: list, source: str = "eastmoney",
                      i, total, ok, fail, time.time() - t0)
     log.info("基本面回填完成：共 %d 只，成功 %d，失败 %d，总耗时 %.1fs",
              total, ok, fail, time.time() - t0)
+    if fail:
+        raise RuntimeError(f"基本面回填 {fail} 只失败，不刷新水位")
 
 
 def main() -> None:

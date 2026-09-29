@@ -1,12 +1,24 @@
 """Tushare 全量接口（5000积分档新增 17 张表）查询端点。"""
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from ..deps import _conn
 
 router = APIRouter()
+
+
+def _parse_date(v: Optional[str], name: str = "trade_date") -> Optional[str]:
+    """校验 YYYY-MM-DD 日期参数，非法时报 400（避免拼进 SQL 报 500）。"""
+    if not v:
+        return None
+    try:
+        datetime.strptime(v, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400,
+                            detail=f"{name} 格式应为 YYYY-MM-DD")
+    return v
 
 
 @router.get("/api/mainbz")
@@ -132,22 +144,33 @@ def get_top_inst(
     market: str = Query(default="cn"),
     symbol: str = Query(description="股票代码，如 600519"),
     limit: int = Query(default=100, le=500),
+    date: Optional[str] = Query(default=None, description="交易日 YYYY-MM-DD，缺省全部日期"),
 ):
-    """龙虎榜机构明细：按交易日倒序。"""
+    """龙虎榜机构明细：按交易日倒序；指定 date 则只返回该交易日。"""
+    date = _parse_date(date, "date")
     with _conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT trade_date, side, exalter, buy, buy_rate, sell,"
-                " sell_rate, net_buy FROM top_inst"
-                " WHERE market = %s AND symbol = %s"
-                " ORDER BY trade_date DESC, net_buy DESC NULLS LAST LIMIT %s",
-                (market, symbol, limit),
-            )
+            if date:
+                cur.execute(
+                    "SELECT trade_date, side, exalter, buy, buy_rate, sell,"
+                    " sell_rate, net_buy FROM top_inst"
+                    " WHERE market = %s AND symbol = %s AND trade_date = %s"
+                    " ORDER BY net_buy DESC NULLS LAST LIMIT %s",
+                    (market, symbol, date, limit),
+                )
+            else:
+                cur.execute(
+                    "SELECT trade_date, side, exalter, buy, buy_rate, sell,"
+                    " sell_rate, net_buy FROM top_inst"
+                    " WHERE market = %s AND symbol = %s"
+                    " ORDER BY trade_date DESC, net_buy DESC NULLS LAST LIMIT %s",
+                    (market, symbol, limit),
+                )
             rows = cur.fetchall()
     return [
         {
             "trade_date": r[0].isoformat(),
-            "side": "买方" if r[1] == 0 else "卖方",
+            "side": ("买方" if r[1] == 0 else "卖方") if r[1] is not None else None,
             "exalter": r[2], "buy": r[3], "buy_rate": r[4],
             "sell": r[5], "sell_rate": r[6], "net_buy": r[7],
         }
@@ -605,6 +628,7 @@ def get_index_weight(
     limit: int = Query(default=300, le=2000),
 ):
     """指数权重：默认最新交易日，按权重倒序。"""
+    trade_date = _parse_date(trade_date)
     with _conn() as conn:
         with conn.cursor() as cur:
             if not trade_date:

@@ -39,16 +39,26 @@ Docker 镜像中通过环境变量指向 /app/web_dist。
 本地运行：
     cd stock-data && .venv/bin/python -m uvicorn api.main:app --port 8000
 """
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from .deps import WEB_DIST, log
+from .deps import WEB_DIST, close_pool, log
 from .routers import (
     company, financials, health, holders, market, quotes, screener, sync, tech,
     tushare, tushare_full, valuation, watchlist,
 )
 
-app = FastAPI(title="股票数据管道 API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    close_pool()
+    log.info("API 数据库连接池已关闭")
+
+
+app = FastAPI(title="股票数据管道 API", version="0.1.0", lifespan=lifespan)
 
 app.include_router(quotes.router)
 app.include_router(market.router)

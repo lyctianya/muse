@@ -1,4 +1,8 @@
 """行情：股票搜索、日线、周文件列表。"""
+import json
+import os
+import re
+import urllib.request
 from datetime import date
 from typing import Optional
 
@@ -7,6 +11,8 @@ from fastapi import APIRouter, Query
 from ..deps import _conn
 
 router = APIRouter()
+
+WEEK_TAG_RE = re.compile(r"^data-(\d{4}-W\d{2})$")
 
 
 @router.get("/api/symbols")
@@ -78,9 +84,45 @@ def get_bars(
 
 @router.get("/api/weeks")
 def list_weeks():
-    """可下载的周文件列表。
+    """可下载的周文件列表：读 GitHub Releases 的 data-* 包（含附件直链）。
 
-    占位实现：待周导出任务产出 manifest 并接入 GitHub Releases 后，
-    这里改为读取 manifest / Release 列表返回真实数据。
+    公开仓库无需鉴权；失败时返回空列表 + note，前端照常渲染。
     """
-    return {"weeks": []}
+    repo = os.environ.get("GITHUB_REPO", "") or "lyctianya/muse"
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{repo}/releases?per_page=100",
+            headers={"Accept": "application/vnd.github+json",
+                     "User-Agent": "stock-data-pipeline"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            releases = json.load(resp)
+    except Exception as exc:
+        return {"weeks": [], "note": f"读取 Releases 失败：{exc}"}
+    weeks = []
+    for rel in releases:
+        tag = rel.get("tag_name", "")
+        m = WEEK_TAG_RE.match(tag)
+        if not m:
+            continue
+        files = {}
+        for a in rel.get("assets", []) or []:
+            files[a["name"]] = {
+                "file": a["name"],
+                "url": a.get("browser_download_url"),
+                "size": a.get("size"),
+            }
+        # tag 即 ISO 周（data-YYYY-Www），直接算出周一/周日，不再逐个下载 manifest
+        start, end = None, None
+        try:
+            yw = m.group(1)  # YYYY-Www
+            y, w = int(yw[:4]), int(yw[6:])
+            start = date.fromisocalendar(y, w, 1).isoformat()
+            end = date.fromisocalendar(y, w, 7).isoformat()
+        except ValueError:
+            pass
+        weeks.append({"week": m.group(1), "tag": tag, "files": files,
+                      "start": start, "end": end,
+                      "published_at": rel.get("published_at")})
+    weeks.sort(key=lambda w: w["week"], reverse=True)
+    return {"weeks": weeks}

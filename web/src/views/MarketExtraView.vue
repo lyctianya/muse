@@ -49,10 +49,10 @@
               <a-table-column title="上榜理由" data-index="reason" :ellipsis="true" :tooltip="true" />
             </template>
             <template #expand-row="{ record }">
-              <div v-if="topinstLoading[record.symbol]" style="padding: 12px; color: #86909c">
+              <div v-if="topinstLoading[topinstKey(record.symbol)]" style="padding: 12px; color: #86909c">
                 机构明细加载中…
               </div>
-              <a-table v-else :data="topinstCache[record.symbol] || []"
+              <a-table v-else :data="topinstCache[topinstKey(record.symbol)] || []"
                        :pagination="{ pageSize: 10 }" size="mini">
                 <template #columns>
                   <a-table-column title="交易日" data-index="trade_date" :width="110" />
@@ -179,6 +179,7 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import * as echarts from 'echarts'
+import { fmtDateLocal as fmt } from '../utils/date.js'
 
 const indexOptions = [
   { code: '000001.SH', label: '上证指数' },
@@ -190,7 +191,6 @@ const indexOptions = [
 ]
 const indexCode = ref('000001.SH')
 const today = new Date()
-const fmt = (d) => d.toISOString().slice(0, 10)
 const lastYear = new Date(today)
 lastYear.setFullYear(today.getFullYear() - 1)
 const indexRange = ref([fmt(lastYear), fmt(today)])
@@ -283,17 +283,20 @@ async function loadToplist() {
   }
 }
 
-// 龙虎榜行展开：懒加载该股机构明细（top_inst）
+// 龙虎榜行展开：懒加载该股机构明细（top_inst），缓存按 symbol+日期 key
+const topinstKey = (sym) => `${sym}|${toplistDate.value || ''}`
 async function onToplistExpand(record) {
   const sym = record.symbol
-  if (topinstCache.value[sym] || topinstLoading.value[sym]) return
-  topinstLoading.value[sym] = true
+  const key = topinstKey(sym)
+  if (topinstCache.value[key] || topinstLoading.value[key]) return
+  topinstLoading.value[key] = true
   try {
-    topinstCache.value[sym] = await getJSON(`/api/top-inst?symbol=${sym}&limit=50`)
+    const dateParam = toplistDate.value ? `&date=${toplistDate.value}` : ''
+    topinstCache.value[key] = await getJSON(`/api/top-inst?symbol=${sym}&limit=50${dateParam}`)
   } catch (e) {
     Message.error(`机构明细加载失败：${e.message}`)
   } finally {
-    topinstLoading.value[sym] = false
+    topinstLoading.value[key] = false
   }
 }
 

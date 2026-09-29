@@ -72,7 +72,7 @@ TUSHARE_TABLES = [
     ("adj_factor", ["market", "symbol", "trade_date"]),
     ("holder_trade", ["market", "symbol", "ann_date", "holder_name", "change_vol", "begin_date"]),
     ("daily_ts", ["market", "symbol", "trade_date"]),
-    ("repurchase", ["market", "symbol", "ann_date"]),
+    ("repurchase", ["market", "symbol", "ann_date", "proc"]),
     ("pledge_detail", ["market", "symbol", "ann_date", "holder_name", "start_date"]),
     ("index_basic", ["ts_code"]),
     ("index_weight", ["index_code", "con_code", "trade_date"]),

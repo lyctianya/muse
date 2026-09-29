@@ -91,6 +91,10 @@ def fetch_market(market: str, workers: Optional[int] = None) -> dict:
 
     # 1. 刷新现役名单
     symbols = module.get_symbols()
+    if not symbols:
+        # 名单接口抖动返回空时直接中止：否则 mark_inactive 会把全市场标为退市
+        log.error("拉取 %s：股票名单为空，中止（避免误标全市场 inactive）", label)
+        raise SystemExit(f"{label} 股票名单为空，已中止")
     db.upsert_symbols(market, symbols, currency)
     # 标记退市/消失的
     old_active = set(db.get_active_symbols(market))
@@ -124,14 +128,21 @@ def fetch_market(market: str, workers: Optional[int] = None) -> dict:
 
 
 def run(market: Optional[str] = None, workers: Optional[int] = None) -> dict:
-    """每日任务入口。market 为 None 时拉取全部三市场。"""
+    """每日任务入口。market 为 None 时拉取全部三市场。
+
+    各市场独立 try/except：一个市场失败不影响其余市场。
+    """
     targets = [market] if market else list(MARKETS)
     result = {}
     for m in targets:
         if m not in MARKETS:
             log.error("未知市场：%s（可选 cn/hk/us）", m)
             continue
-        result[m] = fetch_market(m, workers=workers)
+        try:
+            result[m] = fetch_market(m, workers=workers)
+        except Exception as exc:  # noqa: BLE001
+            log.error("%s 市场拉取失败（不影响其他市场）：%s", m, exc)
+            result[m] = {"failed": True, "error": str(exc)}
     return result
 
 

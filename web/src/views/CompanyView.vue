@@ -59,10 +59,11 @@
         </a-col>
       </a-row>
 
-      <!-- 财务 / 股东 Tabs -->
+      <!-- 财务 / 股东 Tabs（lazy-load：只渲染激活过的 tab，首屏更快） -->
       <a-tabs
         v-model:active-key="activeTab"
         class="company-tabs"
+        lazy-load
         @change="onTabChange"
       >
         <a-tab-pane key="income" title="利润表">
@@ -633,6 +634,7 @@ import { IconLeft } from '@arco-design/web-vue/es/icon'
 import * as echarts from 'echarts'
 import WatchStar from '../components/WatchStar.vue'
 import FinTable from '../components/FinTable.vue'
+import { fmtDateLocal as fmt } from '../utils/date.js'
 
 const props = defineProps({ symbol: String })
 const route = useRoute()
@@ -652,7 +654,6 @@ let pePbChart = null
 let mfChart = null
 
 const today = new Date()
-const fmt = (d) => d.toISOString().slice(0, 10)
 const lastYear = new Date(today)
 lastYear.setFullYear(today.getFullYear() - 1)
 const range = ref([fmt(lastYear), fmt(today)])
@@ -718,7 +719,7 @@ const cyqCostRange = computed(() => {
 const futureFloatStat = computed(() => {
   const oneYearLater = new Date()
   oneYearLater.setFullYear(oneYearLater.getFullYear() + 1)
-  const cutoff = oneYearLater.toISOString().slice(0, 10)
+  const cutoff = fmt(oneYearLater)
   let shares = 0, ratio = 0
   for (const r of shareFloat.value) {
     if (r.is_future && r.float_date <= cutoff) {
@@ -767,8 +768,11 @@ async function getJSON(url) {
   return res.json()
 }
 
+let loadSeq = 0
 async function loadAll() {
   if (!range.value || range.value.length !== 2) return
+  const mySeq = ++loadSeq
+  const alive = () => mySeq === loadSeq
   loading.value = true
   try {
     const [from, to] = range.value
@@ -778,6 +782,7 @@ async function loadAll() {
       getJSON(`/api/bars?${q}&from=${from}&to=${to}`),
       getJSON(`/api/tech?${q}&from=${from}&to=${to}&indicator=macd`),
     ])
+    if (!alive()) return
     company.value = comp
     renderChart(bars, macd)
 
@@ -790,11 +795,13 @@ async function loadAll() {
       getJSON(`/api/holders?${q}&type=top10`),
       getJSON(`/api/holder-trades?${q}`),
     ])
+    if (!alive()) return
     financials.value = { income, balance, cashflow, indicator }
     business.value = biz
     holders.value = hol
     trades.value = trd
     await nextTick()
+    if (!alive()) return
     renderIncomeChart()
     renderRoeChart()
 
@@ -808,6 +815,7 @@ async function loadAll() {
       getJSON(`/api/suspend?${q}`),
       getJSON(`/api/valuation-quantile?${q}`).catch(() => ({ found: false })),
     ])
+    if (!alive()) return
     dailyBasic.value = db250
     dailyBasicLoaded.value = true
     valuation.value = val
@@ -817,13 +825,14 @@ async function loadAll() {
     moneyflow.value = mf
     suspend.value = sp
     await nextTick()
+    if (!alive()) return
     renderPePbChart()
     renderMfChart()
     renderValuationCharts()
   } catch (e) {
     Message.error(`加载失败：${e.message}`)
   } finally {
-    loading.value = false
+    if (alive()) loading.value = false
   }
 }
 
@@ -961,7 +970,20 @@ function onTabChange(key) {
     valPbChart && valPbChart.resize()
   })
   if (key) ensureTabLoaded(key).finally(() => {
-    nextTick(restore)
+    nextTick(() => {
+      // lazy-load 下首次点开 tab 时 div 刚挂载，补画其中的图表
+      if (key === 'daily-basic') {
+        renderPePbChart()
+        renderValuationCharts()
+      } else if (key === 'moneyflow') {
+        renderMfChart()
+      } else if (key === 'indicator') {
+        renderRoeChart()
+      } else if (key === 'income') {
+        renderIncomeChart()
+      }
+      restore()
+    })
     setTimeout(restore, 50)
   })
 }

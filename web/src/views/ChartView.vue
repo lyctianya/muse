@@ -32,6 +32,7 @@ import { Message } from '@arco-design/web-vue'
 import { IconLeft } from '@arco-design/web-vue/es/icon'
 import * as echarts from 'echarts'
 import WatchStar from '../components/WatchStar.vue'
+import { fmtDateLocal as fmt } from '../utils/date.js'
 
 const props = defineProps({ market: String, symbol: String })
 const route = useRoute()
@@ -54,7 +55,6 @@ const indicator = ref('macd')
 
 // 默认近一年
 const today = new Date()
-const fmt = (d) => d.toISOString().slice(0, 10)
 const lastYear = new Date(today)
 lastYear.setFullYear(today.getFullYear() - 1)
 const range = ref([fmt(lastYear), fmt(today)])

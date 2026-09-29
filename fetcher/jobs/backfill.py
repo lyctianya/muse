@@ -77,6 +77,10 @@ def backfill_market(market: str, start: date, end: date,
     log.info("===== 开始回填 %s（%s），区间 %s ~ %s =====", label, market, start, end)
 
     symbols = module.get_symbols()
+    if not symbols:
+        # 名单接口抖动返回空时直接中止：否则 mark_inactive 会把全市场标为退市
+        log.error("回填 %s：股票名单为空，中止（避免误标全市场 inactive）", label)
+        raise SystemExit(f"{label} 股票名单为空，已中止")
     db.upsert_symbols(market, symbols, currency)
     old_active = set(db.get_active_symbols(market))
     db.mark_inactive(market, old_active - {s for s, _ in symbols})

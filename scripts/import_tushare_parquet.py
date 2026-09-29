@@ -69,7 +69,7 @@ TABLES = [
     {"name": "adj_factor", "pk": ["market", "symbol", "trade_date"]},
     {"name": "holder_trade", "pk": ["market", "symbol", "ann_date", "holder_name", "change_vol", "begin_date"]},
     {"name": "daily_ts", "pk": ["market", "symbol", "trade_date"]},
-    {"name": "repurchase", "pk": ["market", "symbol", "ann_date"]},
+    {"name": "repurchase", "pk": ["market", "symbol", "ann_date", "proc"]},
     {"name": "pledge_detail", "pk": ["market", "symbol", "ann_date", "holder_name", "start_date"]},
     {"name": "index_basic", "pk": ["ts_code"]},
     {"name": "index_weight", "pk": ["index_code", "con_code", "trade_date"]},

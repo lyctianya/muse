@@ -222,7 +222,11 @@ def _parallel_map(
     *,
     log_every: int = 100,
 ) -> int:
-    """并发执行 fn(item)->int（返回写入行数），共享 Tushare 限流。"""
+    """并发执行 fn(item)->int（返回写入行数），共享 Tushare 限流。
+
+    失败项在末尾重试一次；仍失败则抛 RuntimeError 中断任务，
+    避免异常被吞后水位越过失败项形成永久缺口。
+    """
     items = list(items)
     workers = _workers()
     log.info("%s 待处理 %d 项，workers=%d", label, len(items), workers)
@@ -231,7 +235,7 @@ def _parallel_map(
     t0 = time.time()
     total = 0
     done = 0
-    failed = 0
+    failed: list = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futs = {pool.submit(fn, item): item for item in items}
         for fut in as_completed(futs):
@@ -240,14 +244,30 @@ def _parallel_map(
             try:
                 total += int(fut.result() or 0)
             except Exception as exc:  # noqa: BLE001
-                failed += 1
+                failed.append(item)
                 log.warning("%s [%s] 失败：%s", label, item, exc)
             if done % log_every == 0 or done == len(items):
                 log.info("%s 进度 %d/%d，累计 %d 行，失败 %d，%.1fs",
-                         label, done, len(items), total, failed,
+                         label, done, len(items), total, len(failed),
                          time.time() - t0)
+    # 失败项串行重试一次
+    if failed:
+        log.info("%s 失败 %d 项，开始重试", label, len(failed))
+        retry_failed = []
+        for item in failed:
+            try:
+                total += int(fn(item) or 0)
+            except Exception as exc:  # noqa: BLE001
+                retry_failed.append(item)
+                log.warning("%s [%s] 重试仍失败：%s", label, item, exc)
+        failed = retry_failed
     log.info("%s 完成：%d 行，失败 %d，%.1fs",
-             label, total, failed, time.time() - t0)
+             label, total, len(failed), time.time() - t0)
+    if failed:
+        raise RuntimeError(
+            f"{label} 有 {len(failed)} 项失败（已重试）：{failed[:20]}"
+            + ("..." if len(failed) > 20 else "")
+            + "，请检查日志后用 --from-date 断点续跑")
     return total
 
 
@@ -329,7 +349,8 @@ def upsert_company_info_all(*, force: bool = False) -> int:
                     end_date=date.today().strftime("%Y%m%d"),
                     fields="cal_date,is_open,pretrade_date")
         if cal is not None and not cal.empty:
-            open_days = cal[cal["is_open"] == 1]
+            # is_open 可能是 int 1 或 str "1"，统一转 str 比较
+            open_days = cal[cal["is_open"].astype(str) == "1"]
             if not open_days.empty:
                 latest = open_days.iloc[-1]["cal_date"]
                 db_df = _call(
@@ -790,6 +811,7 @@ def backfill_main_business_vip(*, force: bool = False) -> int:
                         period=period,
                         type=bz_type,
                         offset=offset,
+                        limit=8000,  # 显式分页大小，与下方的 n<8000 终止条件对齐
                         fields="ts_code,end_date,bz_item,bz_sales,bz_profit,"
                                "bz_cost,curr_type,update_flag",
                     )
@@ -801,6 +823,7 @@ def backfill_main_business_vip(*, force: bool = False) -> int:
                                 "fina_mainbz_vip",
                                 period=period,
                                 type=bz_type,
+                                limit=8000,
                                 fields="ts_code,end_date,bz_item,bz_sales,"
                                        "bz_profit,bz_cost,curr_type,update_flag",
                             )

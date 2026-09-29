@@ -8,8 +8,9 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 from typing import Iterable, Optional
+from zoneinfo import ZoneInfo
 
-from fetcher import db
+from fetcher import config, db
 from fetcher.sync_registry import TABLE_BY_KEY, TABLES
 
 log = logging.getLogger(__name__)
@@ -117,7 +118,7 @@ def upsert(
                 "table_name": table,
                 "latest_date": latest_date,
                 "row_count": int(row_count or 0),
-                "last_synced_at": last_synced_at or datetime.now(),
+                "last_synced_at": last_synced_at or datetime.now(ZoneInfo(config.TZ)),
             },
         )
 

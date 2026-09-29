@@ -4,6 +4,7 @@
 任务重跑 / 断点续跑都是安全的。
 """
 import logging
+import threading
 from datetime import date
 from typing import Iterable, Mapping, Optional
 
@@ -14,27 +15,31 @@ from fetcher import config
 log = logging.getLogger(__name__)
 
 _pool: Optional[ConnectionPool] = None
+_pool_lock = threading.Lock()
 
 
 def get_pool() -> ConnectionPool:
-    """全局连接池（懒加载，线程安全）。"""
+    """全局连接池（懒加载，双重检查锁保证线程安全）。"""
     global _pool
     if _pool is None:
-        _pool = ConnectionPool(
-            config.require_database_url(),
-            min_size=2,
-            max_size=16,
-            kwargs={"autocommit": True},
-        )
-        log.info("数据库连接池已创建")
+        with _pool_lock:
+            if _pool is None:
+                _pool = ConnectionPool(
+                    config.require_database_url(),
+                    min_size=2,
+                    max_size=16,
+                    kwargs={"autocommit": True},
+                )
+                log.info("数据库连接池已创建")
     return _pool
 
 
 def close_pool() -> None:
     global _pool
-    if _pool is not None:
-        _pool.close()
-        _pool = None
+    with _pool_lock:
+        if _pool is not None:
+            _pool.close()
+            _pool = None
 
 
 # ---------------- 股票名单 ----------------

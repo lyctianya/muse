@@ -22,6 +22,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from fetcher.sync_freshness import needs_update
 from fetcher.sync_registry import DAILY_COLS, TABLES
 from fetcher import sync_status as ss
 
@@ -60,27 +61,6 @@ def _subprocess_env() -> dict:
     return env
 
 
-def _needs_update(date_col: str, latest, rows: int) -> bool:
-    today = date.today()
-    if latest is None:
-        return rows == 0
-    if rows == 0:
-        return True
-    if date_col in DAILY_COLS:
-        return latest < today
-    # 季报：覆盖最近已结束季度即新鲜
-    try:
-        from fetcher.sync_freshness import _latest_completed_quarter
-        q = _latest_completed_quarter()
-        if q is not None:
-            return latest < q
-    except Exception:  # noqa: BLE001
-        pass
-    qm = ((today.month - 1) // 3) * 3 + 1
-    quarter_start = date(today.year, qm, 1)
-    return latest < quarter_start
-
-
 def _status_rows_from_watermark(watermarks: dict) -> list:
     """用 sync_status 水位 + TABLES 元数据拼前端行。"""
     out = []
@@ -100,7 +80,7 @@ def _status_rows_from_watermark(watermarks: dict) -> list:
             if dc is None:
                 needs = rows == 0
             else:
-                needs = _needs_update(dc, latest, rows)
+                needs = needs_update(dc, latest, rows)
             # 行数为 0 一律视为需要更新（即使日期判定过不去）
             if rows == 0:
                 needs = True
@@ -217,10 +197,14 @@ def sync_run(body: RunBody):
         job_id = uuid.uuid4().hex[:8]
         log_path = LOG_DIR / f"sync_{job_id}.log"
         log_f = open(log_path, "w", encoding="utf-8")
-        proc = subprocess.Popen(
-            cmd, cwd=str(ROOT), stdout=log_f, stderr=subprocess.STDOUT,
-            env=env,
-        )
+        try:
+            proc = subprocess.Popen(
+                cmd, cwd=str(ROOT), stdout=log_f, stderr=subprocess.STDOUT,
+                env=env,
+            )
+        except Exception:
+            log_f.close()
+            raise
         _jobs[job_id] = {
             "job_id": job_id, "table": t["key"], "table_name": t["name"],
             "job_only": job_only,

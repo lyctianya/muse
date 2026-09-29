@@ -88,6 +88,7 @@ def main() -> None:
 
     names = list(JOBS) if args.only == "all" else [args.only]
     t0 = time.time()
+    failed = []
     for name in names:
         label, fn = JOBS[name]
         skip, reason = should_skip_job(name, force=args.force or bool(args.from_date))
@@ -109,7 +110,10 @@ def main() -> None:
             ss.mark_synced_from_job(name)
         except Exception as exc:  # noqa: BLE001
             log.warning("%s 异常中断：%s", label, exc)
-    log.info("全部完成，总耗时 %.1fs", time.time() - t0)
+            failed.append(name)
+    log.info("全部完成，总耗时 %.1fs，失败 %d 项", time.time() - t0, len(failed))
+    if failed:
+        raise SystemExit(f"以下任务失败：{failed}，退出码非零")
 
 
 if __name__ == "__main__":

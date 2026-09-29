@@ -186,16 +186,17 @@ async function runUpdate(record) {
   }
 }
 
-// 任务结束（running 消失）时刷新表状态
+// 只在有运行中任务时轮询，避免空转打 API
 watch(runningJob, (cur, prev) => {
   if (prev && !cur) loadStatus()
+  if (cur && !timer) timer = setInterval(loadJobs, 3000)
+  if (!cur && timer) { clearInterval(timer); timer = null }
 })
 
 let timer = null
 onMounted(() => {
   loadStatus()
   loadJobs()
-  timer = setInterval(loadJobs, 3000)
 })
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)

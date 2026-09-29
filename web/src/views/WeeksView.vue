@@ -8,7 +8,15 @@
       <template #empty>
         <a-empty description="暂无周文件，待首次周导出任务运行后展示" />
       </template>
+      <template #action="{ record }">
+        <a-space wrap>
+          <a-link v-for="f in record._files" :key="f.file" :href="f.url" target="_blank">
+            {{ f.file }}
+          </a-link>
+        </a-space>
+      </template>
     </a-table>
+    <div v-if="note" style="margin-top: 12px; color: #86909c; font-size: 12px">{{ note }}</div>
   </a-card>
 </template>
 
@@ -18,6 +26,7 @@ import { Message } from '@arco-design/web-vue'
 
 const rows = ref([])
 const loading = ref(false)
+const note = ref('')
 const columns = [
   { title: '周', dataIndex: 'week', width: 140 },
   { title: '覆盖区间', dataIndex: 'range', width: 260 },
@@ -31,10 +40,12 @@ async function load() {
     const res = await fetch('/api/weeks')
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
+    note.value = data.note || ''
     rows.value = (data.weeks || []).map((w) => ({
       week: w.week,
-      range: `${w.start} ~ ${w.end}`,
+      range: w.start && w.end ? `${w.start} ~ ${w.end}` : (w.published_at || '').slice(0, 10),
       files: Object.values(w.files || {}).map((f) => f.file).join('、'),
+      _files: Object.values(w.files || {}).filter((f) => f.file.endsWith('.parquet')),
       _raw: w,
     }))
   } catch (e) {
