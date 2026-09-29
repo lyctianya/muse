@@ -5,6 +5,9 @@
     健康检查   /api/health                           api/platform/health.py
     股票域     /api/stock/*                          api/modules/stock/
     文件域     /api/files/*                          api/modules/files/
+    博客域     /api/blog/*                           api/modules/blog/
+    相册域     /api/gallery/*                        api/modules/gallery/
+    游戏域     /api/game/*                           api/modules/game/
 
 新模块接入：在 api/modules/<domain>/ 下建包并导出 router，
 main.py 里加一行 include_router 即可。
@@ -17,7 +20,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from api.modules.blog import router as blog_router
 from api.modules.files import router as files_router
+from api.modules.gallery import router as gallery_router
+from api.modules.game import router as game_router
 from api.modules.stock import router as stock_router
 from api.platform import auth, health
 from api.platform.auth import ensure_admin_seed
@@ -44,6 +50,9 @@ app.include_router(health.router)
 # 业务模块：按域挂前缀
 app.include_router(stock_router, prefix="/api/stock")
 app.include_router(files_router, prefix="/api/files")
+app.include_router(blog_router, prefix="/api/blog")
+app.include_router(gallery_router, prefix="/api/gallery")
+app.include_router(game_router, prefix="/api/game")
 
 
 # 前端托管：/api 路由优先，其余全部落到前端单页

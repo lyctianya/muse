@@ -19,16 +19,19 @@ stock-data/                      # 仓库根（GitHub: lyctianya/muse）
 │       ├── stock/               # 股票域：routers/ 12 个子路由
 │       │   └── __init__.py      # 域装配：include_router + 权限守卫
 │       ├── files/               # 文件域：router.py（上传/列表/下载/删除）
-│       ├── blog/                # 规划中
-│       ├── gallery/             # 规划中（相册）
-│       ├── game/                # 规划中（three.js 游戏）
+│       ├── blog/                # 博客域：文章/标签（Markdown）
+│       ├── gallery/             # 相册域：相册/照片（文件走平台存储）
+│       ├── game/                # 游戏域：three.js 游戏 + 排行榜
 │       └── agent/               # 规划中（AI agent，留空位）
 ├── web/src/                     # 前端：Vue 3 SPA
 │   ├── shell/                   # 壳：App.vue / main.js / router / 登录 / 用户管理
 │   ├── platform/                # 共享：theme.css / utils(api,auth,date,echarts)
 │   └── modules/
 │       ├── stock/views/ + components/
-│       └── files/views/FilesView.vue
+│       ├── files/views/FilesView.vue
+│       ├── blog/views/（列表/详情/编辑）
+│       ├── gallery/views/（相册列表/相册详情）
+│       └── game/views/GameView.vue + games/starfall.js
 ├── fetcher/                     # 股票域数据管道（独立 Docker 服务，暂不搬）
 ├── sql/schema_auth.sql          # 认证表 + 角色权限种子（幂等）
 ├── docs/                        # DESIGN.md / USAGE.md / 本文档
@@ -43,6 +46,9 @@ stock-data/                      # 仓库根（GitHub: lyctianya/muse）
 | `/api/health` | 健康检查 | 公开 |
 | `/api/stock/*` | 股票域 | `market:view` 等 8 个 |
 | `/api/files/*` | 文件域 | `files:view` / `files:upload` / `files:manage` |
+| `/api/blog/*` | 博客域 | `blog:view` / `blog:manage` |
+| `/api/gallery/*` | 相册域 | `gallery:view` / `gallery:upload` / `gallery:manage` |
+| `/api/game/*` | 游戏域 | `game:view` |
 
 新域统一用 `/api/<domain>/*`。
 
@@ -69,10 +75,6 @@ stock-data/                      # 仓库根（GitHub: lyctianya/muse）
 
 ## 规划中的域
 
-- **blog**：文章/分类/评论，配图走 `/api/files`。
-- **gallery**：相册，原图+缩略图走 `/api/files`（缩略图生成待 storage 扩展）。
-- **game**：three.js 游戏；前端路由懒加载（包大），可做无侧边栏全屏路由；
-  排行榜等后端接口按本规范接入。
 - **agent**：AI agent 系统（任务队列/执行日志/LLM Key 管理），复杂度高，
   等上述域落地后单独设计。
 

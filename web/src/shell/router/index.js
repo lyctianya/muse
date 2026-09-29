@@ -11,6 +11,12 @@ import WatchlistView from '../../modules/stock/views/WatchlistView.vue'
 import LoginView from '../views/LoginView.vue'
 import UsersView from '../views/UsersView.vue'
 import FilesView from '../../modules/files/views/FilesView.vue'
+import BlogListView from '../../modules/blog/views/BlogListView.vue'
+import BlogPostView from '../../modules/blog/views/BlogPostView.vue'
+import BlogEditView from '../../modules/blog/views/BlogEditView.vue'
+import GalleryView from '../../modules/gallery/views/GalleryView.vue'
+import AlbumView from '../../modules/gallery/views/AlbumView.vue'
+import GameView from '../../modules/game/views/GameView.vue'
 import { authState, hasPerm, loadUser } from '../../platform/utils/auth.js'
 
 const router = createRouter({
@@ -28,6 +34,13 @@ const router = createRouter({
     { path: '/watchlist', name: 'watchlist', component: WatchlistView, meta: { perm: 'watchlist:use' } },
     { path: '/users', name: 'users', component: UsersView, meta: { perm: 'users:manage' } },
     { path: '/files', name: 'files', component: FilesView, meta: { perm: 'files:view' } },
+    { path: '/blog', name: 'blog', component: BlogListView, meta: { perm: 'blog:view' } },
+    { path: '/blog/new', name: 'blog-new', component: BlogEditView, meta: { perm: 'blog:manage' } },
+    { path: '/blog/edit/:id', name: 'blog-edit', component: BlogEditView, meta: { perm: 'blog:manage' } },
+    { path: '/blog/:slug', name: 'blog-post', component: BlogPostView, meta: { perm: 'blog:view' } },
+    { path: '/gallery', name: 'gallery', component: GalleryView, meta: { perm: 'gallery:view' } },
+    { path: '/gallery/:id', name: 'album', component: AlbumView, meta: { perm: 'gallery:view' } },
+    { path: '/game', name: 'game', component: GameView, meta: { perm: 'game:view' } },
   ],
 })
 

@@ -24,6 +24,9 @@
         <a-menu-item v-if="can('sync:view')" key="sync"><template #icon><icon-sync /></template>数据更新</a-menu-item>
         <a-menu-item v-if="can('users:manage')" key="users"><template #icon><icon-user /></template>用户管理</a-menu-item>
         <a-menu-item v-if="can('files:view')" key="files"><template #icon><icon-folder /></template>文件管理</a-menu-item>
+        <a-menu-item v-if="can('blog:view')" key="blog"><template #icon><icon-edit /></template>博客</a-menu-item>
+        <a-menu-item v-if="can('gallery:view')" key="gallery"><template #icon><icon-image /></template>相册</a-menu-item>
+        <a-menu-item v-if="can('game:view')" key="game"><template #icon><icon-trophy /></template>游戏</a-menu-item>
       </a-menu>
       <div class="sider-foot" v-show="!collapsed">
         <div class="foot-title">A股 · 港股 · 美股</div>
@@ -64,6 +67,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   IconDashboard, IconSearch, IconFilter, IconStar,
   IconLayers, IconDownload, IconSync, IconUser, IconFolder,
+  IconEdit, IconImage, IconTrophy,
 } from '@arco-design/web-vue/es/icon'
 import { fmtDateLocal } from '../platform/utils/date.js'
 import { authState, hasPerm, logout } from '../platform/utils/auth.js'
@@ -76,6 +80,7 @@ const NAV = {
   home: '市场概览', search: '股票搜索', weeks: '周文件下载', extra: '市场深度',
   sync: '数据更新', screener: '策略选股', watchlist: '自选股', users: '用户管理',
   files: '文件管理', chart: 'K线行情', company: '公司详情',
+  blog: '博客', gallery: '相册', game: '游戏',
 }
 const can = (perm) => hasPerm(perm)
 const activeKey = computed(() => {
@@ -86,6 +91,9 @@ const activeKey = computed(() => {
   if (route.name === 'watchlist') return 'watchlist'
   if (route.name === 'users') return 'users'
   if (route.name === 'files') return 'files'
+  if (route.name === 'blog' || route.name === 'blog-post' || route.name === 'blog-new' || route.name === 'blog-edit') return 'blog'
+  if (route.name === 'gallery' || route.name === 'album') return 'gallery'
+  if (route.name === 'game') return 'game'
   if (route.name === 'search' || route.name === 'chart' || route.name === 'company') return 'search'
   return 'home'
 })
@@ -100,6 +108,7 @@ function onMenuClick(key) {
   const paths = {
     weeks: '/weeks', extra: '/extra', sync: '/sync', screener: '/screener',
     watchlist: '/watchlist', search: '/search', users: '/users', files: '/files',
+    blog: '/blog', gallery: '/gallery', game: '/game',
   }
   router.push(paths[key] || '/')
 }

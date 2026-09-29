@@ -53,14 +53,20 @@ INSERT INTO permissions (key, description) VALUES
     ('users:manage', '用户管理'),
     ('files:view', '文件查看 / 下载'),
     ('files:upload', '文件上传'),
-    ('files:manage', '文件删除管理')
+    ('files:manage', '文件删除管理'),
+    ('blog:view', '博客查看'),
+    ('blog:manage', '博客写作 / 发布 / 删除'),
+    ('gallery:view', '相册查看'),
+    ('gallery:upload', '相册新建 / 照片上传'),
+    ('gallery:manage', '相册删除管理'),
+    ('game:view', '游戏 / 排行榜')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------- 种子：角色 ----------------
 INSERT INTO roles (name, description) VALUES
     ('admin', '管理员：全部权限'),
     ('operator', '运维：除用户管理外全部权限'),
-    ('viewer', '只读：市场概览 / 行情 / 市场深度 / 周文件下载 / 文件查看')
+    ('viewer', '只读：市场概览 / 行情 / 市场深度 / 周文件下载 / 文件查看 / 博客 / 相册 / 游戏')
 ON CONFLICT (name) DO NOTHING;
 
 -- ---------------- 种子：角色-权限 ----------------
@@ -75,9 +81,10 @@ SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.name = 'operator' AND p.key <> 'users:manage'
 ON CONFLICT DO NOTHING;
 
--- viewer：只读五项
+-- viewer：只读八项
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.name = 'viewer'
-  AND p.key IN ('market:view', 'quotes:view', 'extra:view', 'weeks:download', 'files:view')
+  AND p.key IN ('market:view', 'quotes:view', 'extra:view', 'weeks:download',
+                'files:view', 'blog:view', 'gallery:view', 'game:view')
 ON CONFLICT DO NOTHING;
