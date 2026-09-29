@@ -17,6 +17,7 @@ import BlogEditView from '../../modules/blog/views/BlogEditView.vue'
 import GalleryView from '../../modules/gallery/views/GalleryView.vue'
 import AlbumView from '../../modules/gallery/views/AlbumView.vue'
 import GameView from '../../modules/game/views/GameView.vue'
+import ToolsView from '../../modules/tools/views/ToolsView.vue'
 import { authState, hasPerm, loadUser } from '../../platform/utils/auth.js'
 
 const router = createRouter({
@@ -41,6 +42,7 @@ const router = createRouter({
     { path: '/gallery', name: 'gallery', component: GalleryView, meta: { perm: 'gallery:view' } },
     { path: '/gallery/:id', name: 'album', component: AlbumView, meta: { perm: 'gallery:view' } },
     { path: '/game', name: 'game', component: GameView, meta: { perm: 'game:view' } },
+    { path: '/tools', name: 'tools', component: ToolsView, meta: { perm: 'tools:use' } },
   ],
 })
 

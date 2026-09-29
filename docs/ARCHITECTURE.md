@@ -23,6 +23,8 @@ stock-data/                      # 仓库根（GitHub: lyctianya/muse）
 │       ├── gallery/             # 相册域：相册/照片（文件走平台存储）
 │       ├── game/                # 游戏域：three.js 游戏 + 排行榜
 │       └── agent/               # 规划中（AI agent，留空位）
+│
+│   注：tools 工具箱是纯前端模块（v1 无需后端），只有 web/src/modules/tools/。
 ├── web/src/                     # 前端：Vue 3 SPA
 │   ├── shell/                   # 壳：App.vue / main.js / router / 登录 / 用户管理
 │   ├── platform/                # 共享：theme.css / utils(api,auth,date,echarts)
@@ -32,6 +34,7 @@ stock-data/                      # 仓库根（GitHub: lyctianya/muse）
 │       ├── blog/views/（列表/详情/编辑）
 │       ├── gallery/views/（相册列表/相册详情）
 │       └── game/views/GameView.vue + games/starfall.js
+│       └── tools/views/ToolsView.vue + tools/（10 个纯前端小工具，见下）
 ├── fetcher/                     # 股票域数据管道（独立 Docker 服务，暂不搬）
 ├── sql/schema_auth.sql          # 认证表 + 角色权限种子（幂等）
 ├── docs/                        # DESIGN.md / USAGE.md / 本文档

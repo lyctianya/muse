@@ -59,7 +59,8 @@ INSERT INTO permissions (key, description) VALUES
     ('gallery:view', '相册查看'),
     ('gallery:upload', '相册新建 / 照片上传'),
     ('gallery:manage', '相册删除管理'),
-    ('game:view', '游戏 / 排行榜')
+    ('game:view', '游戏 / 排行榜'),
+    ('tools:use', '工具箱')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------- 种子：角色 ----------------
@@ -81,10 +82,10 @@ SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.name = 'operator' AND p.key <> 'users:manage'
 ON CONFLICT DO NOTHING;
 
--- viewer：只读八项
+-- viewer：只读九项
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.name = 'viewer'
   AND p.key IN ('market:view', 'quotes:view', 'extra:view', 'weeks:download',
-                'files:view', 'blog:view', 'gallery:view', 'game:view')
+                'files:view', 'blog:view', 'gallery:view', 'game:view', 'tools:use')
 ON CONFLICT DO NOTHING;
