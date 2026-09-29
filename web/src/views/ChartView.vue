@@ -26,6 +26,7 @@
 </template>
 
 <script setup>
+import { getJSON } from '../utils/api.js'
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
@@ -192,14 +193,10 @@ async function loadBars() {
       from: range.value[0],
       to: range.value[1],
     }
-    const [barsRes, techRes] = await Promise.all([
-      fetch(`/api/bars?${new URLSearchParams(base)}`),
-      fetch(`/api/tech?${new URLSearchParams({ ...base, indicator: indicator.value })}`),
+    const [bars, tech] = await Promise.all([
+      getJSON(`/api/bars?${new URLSearchParams(base)}`),
+      getJSON(`/api/tech?${new URLSearchParams({ ...base, indicator: indicator.value })}`),
     ])
-    if (!barsRes.ok) throw new Error(`HTTP ${barsRes.status}`)
-    if (!techRes.ok) throw new Error(`HTTP ${techRes.status}`)
-    const bars = await barsRes.json()
-    const tech = await techRes.json()
     if (!bars.length) {
       Message.info('该区间暂无行情数据')
       chart && chart.clear()

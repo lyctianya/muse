@@ -96,6 +96,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
+import { getJSON, postJSON } from '../utils/api.js'
 
 const router = useRouter()
 const fields = ref([])
@@ -212,17 +213,7 @@ async function runQuery() {
       }
       return base
     })
-    const res = await fetch('/api/screener/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filters, limit: 200 }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      Message.error(err.detail || `查询失败（${res.status}）`)
-      return
-    }
-    const data = await res.json()
+    const data = await postJSON('/api/screener/run', { filters, limit: 200 })
     rows.value = data.rows || []
     total.value = data.total || 0
     searched.value = true
@@ -246,8 +237,7 @@ const fmtSigned = (v) => {
 
 onMounted(async () => {
   try {
-    const res = await fetch('/api/screener/fields')
-    fields.value = await res.json()
+    fields.value = await getJSON('/api/screener/fields')
   } catch (e) {
     Message.error('字段元数据加载失败：' + e.message)
   }

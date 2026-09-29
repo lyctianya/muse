@@ -118,15 +118,6 @@ const runningJob = computed(() => jobs.value.find((j) => j.status === 'running')
 const anyWatermarkMissing = computed(() =>
   status.value.some((t) => t.watermark_missing))
 
-async function getJSON(url, opts) {
-  const res = await fetch(url, opts)
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || `HTTP ${res.status}`)
-  }
-  return res.json()
-}
-
 async function loadStatus() {
   checking.value = true
   try {
@@ -167,16 +158,7 @@ async function loadJobs() {
 async function runUpdate(record) {
   updatingKey.value = record.key
   try {
-    const res = await fetch('/api/sync/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ table: record.key }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.detail || `HTTP ${res.status}`)
-    }
-    const { job_id } = await res.json()
+    const { job_id } = await postJSON('/api/sync/run', { table: record.key })
     Message.success(`已启动更新任务：${record.name}（${job_id}）`)
     await loadJobs()
   } catch (e) {

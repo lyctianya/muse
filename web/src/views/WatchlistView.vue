@@ -88,6 +88,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
+import { del, getJSON, postJSON, putJSON } from '../utils/api.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -115,9 +116,7 @@ const pcColor = (v) => (v > 0 ? '#f53f3f' : v < 0 ? '#00b42a' : undefined)
 async function load() {
   loading.value = true
   try {
-    const res = await fetch('/api/watchlist')
-    if (!res.ok) throw new Error('加载失败')
-    items.value = await res.json()
+    items.value = await getJSON('/api/watchlist')
   } catch (e) {
     Message.error(e.message)
   } finally {
@@ -131,9 +130,8 @@ function goCompany(record) {
 
 async function removeOne(record) {
   const q = new URLSearchParams({ market: record.market, symbol: record.symbol })
-  const res = await fetch(`/api/watchlist?${q}`, { method: 'DELETE' })
-  if (res.ok) { Message.success('已删除'); load() }
-  else Message.error('删除失败')
+  try { await del(`/api/watchlist?${q}`); Message.success('已删除'); load() }
+  catch (e) { Message.error('删除失败：' + e.message) }
 }
 
 // 改分组
@@ -147,13 +145,10 @@ function openMove(record) {
 }
 async function doMove() {
   const name = (moveGroup.value || '').trim() || '默认分组'
-  const res = await fetch('/api/watchlist', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ market: moveTarget.market, symbol: moveTarget.symbol, group_name: name }),
-  })
-  if (res.ok) { Message.success('已移动分组'); moveVisible.value = false; load() }
-  else Message.error('操作失败')
+  try {
+    await putJSON('/api/watchlist', { market: moveTarget.market, symbol: moveTarget.symbol, group_name: name })
+    Message.success('已移动分组'); moveVisible.value = false; load()
+  } catch (e) { Message.error('操作失败：' + e.message) }
 }
 
 // 改备注
@@ -166,13 +161,10 @@ function openNote(record) {
   noteVisible.value = true
 }
 async function doNote() {
-  const res = await fetch('/api/watchlist', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ market: noteTarget.market, symbol: noteTarget.symbol, note: noteText.value }),
-  })
-  if (res.ok) { Message.success('备注已更新'); noteVisible.value = false; load() }
-  else Message.error('操作失败')
+  try {
+    await putJSON('/api/watchlist', { market: noteTarget.market, symbol: noteTarget.symbol, note: noteText.value })
+    Message.success('备注已更新'); noteVisible.value = false; load()
+  } catch (e) { Message.error('操作失败：' + e.message) }
 }
 
 // 重命名分组
@@ -188,13 +180,8 @@ async function doRename() {
   const to = (renameText.value || '').trim()
   if (!to || to === renameFrom) { renameVisible.value = false; return }
   const list = items.value.filter((it) => (it.group_name || '默认分组') === renameFrom)
-  for (const it of list) {
-    await fetch('/api/watchlist', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ market: it.market, symbol: it.symbol, group_name: to }),
-    })
-  }
+  await Promise.all(list.map((it) =>
+    putJSON('/api/watchlist', { market: it.market, symbol: it.symbol, group_name: to })))
   Message.success(`分组已重命名：${renameFrom} → ${to}`)
   renameVisible.value = false
   load()
@@ -204,13 +191,8 @@ async function doRename() {
 async function deleteGroup(name) {
   if (name === '默认分组') { Message.warning('默认分组不能删除'); return }
   const list = items.value.filter((it) => (it.group_name || '默认分组') === name)
-  for (const it of list) {
-    await fetch('/api/watchlist', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ market: it.market, symbol: it.symbol, group_name: '默认分组' }),
-    })
-  }
+  await Promise.all(list.map((it) =>
+    putJSON('/api/watchlist', { market: it.market, symbol: it.symbol, group_name: '默认分组' })))
   Message.success(`已删除分组「${name}」，${list.length} 只股票移入默认分组`)
   load()
 }

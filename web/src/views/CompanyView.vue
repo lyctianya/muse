@@ -627,6 +627,7 @@
 </template>
 
 <script setup>
+import { getJSON } from '../utils/api.js'
 import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
@@ -760,12 +761,6 @@ function ptypeColor(t) {
   if (t.includes('预减')) return 'green'
   if (t.includes('扭亏')) return 'blue'
   return 'gray'
-}
-
-async function getJSON(url) {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
 }
 
 let loadSeq = 0

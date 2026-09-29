@@ -43,6 +43,7 @@
 </template>
 
 <script setup>
+import { getJSON } from '../utils/api.js'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
@@ -71,9 +72,7 @@ async function doSearch() {
   try {
     const params = new URLSearchParams({ q: q.value, limit: '200' })
     if (market.value) params.set('market', market.value)
-    const res = await fetch(`/api/symbols?${params}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
+    const data = await getJSON(`/api/symbols?${params}`)
     rows.value = data.map((r) => ({ ...r, key: `${r.market}:${r.symbol}` }))
     if (!data.length) Message.info('没有找到匹配的股票')
   } catch (e) {

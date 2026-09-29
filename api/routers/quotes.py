@@ -6,9 +6,10 @@ import urllib.request
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from ..deps import _conn
+from .auth import require_perm
 
 router = APIRouter()
 
@@ -83,7 +84,7 @@ def get_bars(
 
 
 @router.get("/api/weeks")
-def list_weeks():
+def list_weeks(_: dict = Depends(require_perm("weeks:download"))):
     """可下载的周文件列表：读 GitHub Releases 的 data-* 包（含附件直链）。
 
     公开仓库无需鉴权；失败时返回空列表 + note，前端照常渲染。

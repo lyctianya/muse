@@ -13,6 +13,7 @@
 import { ref, onMounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { IconStar, IconStarFill } from '@arco-design/web-vue/es/icon'
+import { del, getJSON, postJSON } from '../utils/api.js'
 
 const props = defineProps({ market: { type: String, default: 'cn' }, symbol: String })
 
@@ -21,8 +22,7 @@ const busy = ref(false)
 
 async function refresh() {
   try {
-    const res = await fetch('/api/watchlist')
-    const list = await res.json()
+    const list = await getJSON('/api/watchlist')
     inWatch.value = list.some(
       (w) => w.market === props.market && w.symbol === props.symbol)
   } catch (e) { /* 忽略，后端未建表时保持未加入状态 */ }
@@ -33,17 +33,11 @@ async function toggle() {
   try {
     if (inWatch.value) {
       const q = new URLSearchParams({ market: props.market, symbol: props.symbol })
-      const res = await fetch(`/api/watchlist?${q}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('删除失败')
+      await del(`/api/watchlist?${q}`)
       inWatch.value = false
       Message.success('已取消自选')
     } else {
-      const res = await fetch('/api/watchlist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ market: props.market, symbol: props.symbol }),
-      })
-      if (!res.ok) throw new Error('加入失败')
+      await postJSON('/api/watchlist', { market: props.market, symbol: props.symbol })
       inWatch.value = true
       Message.success('已加入自选')
     }

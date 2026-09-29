@@ -1,14 +1,13 @@
-"""自选股（单用户，user_id 固定为 'default'）。"""
+"""自选股（多用户：按登录用户名隔离）。"""
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from ..deps import _conn
+from .auth import get_current_user
 
 router = APIRouter()
-
-USER = "default"
 
 
 class WatchBody(BaseModel):
@@ -27,7 +26,7 @@ def _has_table(cur, name: str) -> bool:
 
 
 @router.get("/api/watchlist")
-def list_watchlist():
+def list_watchlist(user: dict = Depends(get_current_user)):
     """自选股列表：按分组/加入时间排序，附最新行情与估值。"""
     with _conn() as conn:
         with conn.cursor() as cur:
@@ -60,7 +59,7 @@ def list_watchlist():
                 + basic_join +
                 " WHERE w.user_id = %s"
                 " ORDER BY w.group_name, w.added_at",
-                (USER,),
+                (user["username"],),
             )
             rows = cur.fetchall()
     out = []
@@ -88,7 +87,7 @@ def _ensure_symbol(cur, market: str, symbol: str) -> None:
 
 
 @router.post("/api/watchlist")
-def add_watchlist(body: WatchBody):
+def add_watchlist(body: WatchBody, user: dict = Depends(get_current_user)):
     """加入自选：已存在则更新分组/备注（upsert）。"""
     with _conn() as conn:
         with conn.cursor() as cur:
@@ -100,7 +99,7 @@ def add_watchlist(body: WatchBody):
                 " ON CONFLICT (user_id, market, symbol) DO UPDATE SET"
                 " group_name = EXCLUDED.group_name,"
                 " note = EXCLUDED.note",
-                (USER, body.market, body.symbol,
+                (user["username"], body.market, body.symbol,
                  body.group_name or "默认分组", body.note or ""),
             )
     return {"ok": True}
@@ -110,6 +109,7 @@ def add_watchlist(body: WatchBody):
 def remove_watchlist(
     market: str = Query(default="cn"),
     symbol: str = Query(description="股票代码，如 600519"),
+    user: dict = Depends(get_current_user),
 ):
     """从自选删除。"""
     with _conn() as conn:
@@ -117,13 +117,13 @@ def remove_watchlist(
             cur.execute(
                 "DELETE FROM watchlist"
                 " WHERE user_id = %s AND market = %s AND symbol = %s",
-                (USER, market, symbol),
+                (user["username"], market, symbol),
             )
     return {"ok": True}
 
 
 @router.put("/api/watchlist")
-def update_watchlist(body: WatchBody):
+def update_watchlist(body: WatchBody, user: dict = Depends(get_current_user)):
     """只更新分组/备注（不改变加入时间）。"""
     sets, params = [], []
     if body.group_name is not None:
@@ -134,7 +134,7 @@ def update_watchlist(body: WatchBody):
         params.append(body.note)
     if not sets:
         return {"ok": True}
-    params += [USER, body.market, body.symbol]
+    params += [user["username"], body.market, body.symbol]
     with _conn() as conn:
         with conn.cursor() as cur:
             cur.execute(

@@ -176,6 +176,7 @@
 </template>
 
 <script setup>
+import { getJSON } from '../utils/api.js'
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { echarts, initChart } from '../utils/echarts-theme.js'
@@ -224,12 +225,6 @@ function fmtNum(v) {
 function fmtPct(v) {
   if (v == null) return '--'
   return Number(v).toFixed(2) + '%'
-}
-
-async function getJSON(url) {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
 }
 
 function onTabChange(key) {

@@ -117,6 +117,7 @@
 </style>
 
 <script setup>
+import { getJSON } from '../utils/api.js'
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
@@ -146,12 +147,6 @@ function fmtAmount(v) {
   if (v >= 1e12) return (v / 1e12).toFixed(2) + ' 万亿'
   if (v >= 1e8) return (v / 1e8).toFixed(2) + ' 亿'
   return fmtNum(v)
-}
-
-async function getJSON(url) {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
 }
 
 function goChart(record) {

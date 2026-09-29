@@ -1,6 +1,7 @@
 """查询 API + 前端托管（路由按业务域拆分到 api/routers/）。
 
 接口：
+    认证      api/routers/auth.py        /api/auth/*, /api/users, /api/roles
     行情      api/routers/quotes.py      /api/symbols, /api/bars, /api/weeks
     市场概览  api/routers/market.py      /api/market/overview, /api/market/top,
                                         /api/market/sectors
@@ -32,6 +33,8 @@
     自选股    api/routers/watchlist.py   /api/watchlist（GET/POST/PUT/DELETE）
     健康检查  api/routers/health.py      /api/health
 
+权限：除 /api/auth/* 与 /api/health 外，其余接口按路由挂 require_perm 守卫。
+
 前端构建产物（web/dist）由 StaticFiles 托管在 / 下；
 本地开发时 WEB_DIST 默认指向项目根的 web/dist，
 Docker 镜像中通过环境变量指向 /app/web_dist。
@@ -41,18 +44,23 @@ Docker 镜像中通过环境变量指向 /app/web_dist。
 """
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .deps import WEB_DIST, close_pool, log
 from .routers import (
-    company, financials, health, holders, market, quotes, screener, sync, tech,
-    tushare, tushare_full, valuation, watchlist,
+    auth, company, financials, health, holders, market, quotes, screener, sync,
+    tech, tushare, tushare_full, valuation, watchlist,
 )
+from .routers.auth import ensure_admin_seed, require_perm
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    try:
+        ensure_admin_seed()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("admin 种子初始化失败：%s", exc)
     yield
     close_pool()
     log.info("API 数据库连接池已关闭")
@@ -60,19 +68,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="股票数据管道 API", version="0.1.0", lifespan=lifespan)
 
-app.include_router(quotes.router)
-app.include_router(market.router)
-app.include_router(company.router)
-app.include_router(financials.router)
-app.include_router(holders.router)
-app.include_router(tech.router)
-app.include_router(tushare.router)
-app.include_router(tushare_full.router)
-app.include_router(sync.router)
-app.include_router(screener.router)
-app.include_router(valuation.router)
-app.include_router(watchlist.router)
+# 认证（公开）与健康检查（公开）
+app.include_router(auth.router)
 app.include_router(health.router)
+
+# 业务路由：按域挂权限守卫
+app.include_router(quotes.router, dependencies=[Depends(require_perm("quotes:view"))])
+app.include_router(market.router, dependencies=[Depends(require_perm("market:view"))])
+app.include_router(company.router, dependencies=[Depends(require_perm("quotes:view"))])
+app.include_router(financials.router, dependencies=[Depends(require_perm("quotes:view"))])
+app.include_router(holders.router, dependencies=[Depends(require_perm("quotes:view"))])
+app.include_router(tech.router, dependencies=[Depends(require_perm("quotes:view"))])
+app.include_router(tushare.router, dependencies=[Depends(require_perm("quotes:view"))])
+app.include_router(tushare_full.router, dependencies=[Depends(require_perm("quotes:view"))])
+app.include_router(sync.router, dependencies=[Depends(require_perm("sync:view"))])
+app.include_router(screener.router, dependencies=[Depends(require_perm("screener:use"))])
+app.include_router(valuation.router, dependencies=[Depends(require_perm("quotes:view"))])
+app.include_router(watchlist.router, dependencies=[Depends(require_perm("watchlist:use"))])
 
 
 # 前端托管：/api 路由优先，其余全部落到前端单页

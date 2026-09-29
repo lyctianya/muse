@@ -62,6 +62,13 @@ TZ=Asia/Shanghai
 
 `api` 启动时会自动加载 `<root>/.env`；fetcher 通过 `fetcher/config.py` 读取（环境变量优先）。
 
+### 3.1 登录与权限
+
+- 首次打开前端自动跳 `/login`：支持用户名密码登录/注册（注册默认 viewer 只读角色）、Google 登录。
+- 权限点：`market:view` 市场概览、`quotes:view` 行情个股、`screener:use` 策略选股、`watchlist:use` 自选股、`extra:view` 市场深度、`weeks:download` 周文件下载、`sync:view` 数据更新查看、`sync:run` 触发回填、`users:manage` 用户管理。
+- 默认角色：`admin`（全部）、`operator`（除用户管理外全部）、`viewer`（只读四项）。管理员在「用户管理」页可增删用户、分配角色、调整角色权限。
+- 自选股按登录用户隔离；旧 `user_id='default'` 数据在创建初始 admin 时自动划归 admin。
+
 ---
 
 ## 4. 首次回填（顺序建议）

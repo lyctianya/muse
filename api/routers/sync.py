@@ -19,8 +19,10 @@ import uuid
 from datetime import date, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from .auth import require_perm
 
 from fetcher.sync_freshness import needs_update
 from fetcher.sync_registry import DAILY_COLS, TABLES
@@ -169,7 +171,7 @@ def _watch(job_id: str, proc: "subprocess.Popen", log_f, job_only: str) -> None:
 
 
 @router.post("/api/sync/run")
-def sync_run(body: RunBody):
+def sync_run(body: RunBody, _: dict = Depends(require_perm("sync:run"))):
     """启动回填任务。全局同时只允许一个 running 任务，否则 409。"""
     t = next((x for x in TABLES if x["key"] == body.table), None)
     if not t:

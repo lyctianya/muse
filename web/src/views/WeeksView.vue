@@ -21,6 +21,7 @@
 </template>
 
 <script setup>
+import { getJSON } from '../utils/api.js'
 import { ref, onMounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
 
@@ -37,9 +38,7 @@ const columns = [
 async function load() {
   loading.value = true
   try {
-    const res = await fetch('/api/weeks')
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
+    const data = await getJSON('/api/weeks')
     note.value = data.note || ''
     rows.value = (data.weeks || []).map((w) => ({
       week: w.week,

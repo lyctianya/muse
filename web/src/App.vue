@@ -1,5 +1,5 @@
 <template>
-  <a-layout style="min-height: 100vh">
+  <a-layout style="min-height: 100vh" v-if="route.name !== 'login'">
     <!-- 深色侧边栏 -->
     <a-layout-sider
       :width="224" :collapsed-width="64" collapsible v-model:collapsed="collapsed"
@@ -15,13 +15,14 @@
         :selected-keys="[activeKey]" :collapsed="collapsed"
         @menu-item-click="onMenuClick" class="side-menu"
       >
-        <a-menu-item key="home"><template #icon><icon-dashboard /></template>市场概览</a-menu-item>
-        <a-menu-item key="search"><template #icon><icon-search /></template>股票搜索</a-menu-item>
-        <a-menu-item key="screener"><template #icon><icon-filter /></template>策略选股</a-menu-item>
-        <a-menu-item key="watchlist"><template #icon><icon-star /></template>自选股</a-menu-item>
-        <a-menu-item key="extra"><template #icon><icon-layers /></template>市场深度</a-menu-item>
-        <a-menu-item key="weeks"><template #icon><icon-download /></template>周文件下载</a-menu-item>
-        <a-menu-item key="sync"><template #icon><icon-sync /></template>数据更新</a-menu-item>
+        <a-menu-item v-if="can('market:view')" key="home"><template #icon><icon-dashboard /></template>市场概览</a-menu-item>
+        <a-menu-item v-if="can('quotes:view')" key="search"><template #icon><icon-search /></template>股票搜索</a-menu-item>
+        <a-menu-item v-if="can('screener:use')" key="screener"><template #icon><icon-filter /></template>策略选股</a-menu-item>
+        <a-menu-item v-if="can('watchlist:use')" key="watchlist"><template #icon><icon-star /></template>自选股</a-menu-item>
+        <a-menu-item v-if="can('extra:view')" key="extra"><template #icon><icon-layers /></template>市场深度</a-menu-item>
+        <a-menu-item v-if="can('weeks:download')" key="weeks"><template #icon><icon-download /></template>周文件下载</a-menu-item>
+        <a-menu-item v-if="can('sync:view')" key="sync"><template #icon><icon-sync /></template>数据更新</a-menu-item>
+        <a-menu-item v-if="can('users:manage')" key="users"><template #icon><icon-user /></template>用户管理</a-menu-item>
       </a-menu>
       <div class="sider-foot" v-show="!collapsed">
         <div class="foot-title">A股 · 港股 · 美股</div>
@@ -30,12 +31,20 @@
     </a-layout-sider>
 
     <a-layout>
-      <!-- 顶栏：页面标题 + 日期 -->
+      <!-- 顶栏：页面标题 + 用户 -->
       <a-layout-header class="app-header">
         <div class="page-title">{{ pageTitle }}</div>
         <div style="margin-left: auto; display: flex; align-items: center; gap: 12px">
           <a-tag color="gold">{{ today }}</a-tag>
-          <span class="muted">Tushare · 本地数据</span>
+          <a-dropdown v-if="authState.user" @select="onUserMenu">
+            <a-button size="small">
+              <template #icon><icon-user /></template>
+              {{ authState.user.display_name }}
+            </a-button>
+            <template #content>
+              <a-doption value="logout">退出登录</a-doption>
+            </template>
+          </a-dropdown>
         </div>
       </a-layout-header>
       <a-layout-content class="app-content">
@@ -45,6 +54,7 @@
       </a-layout-content>
     </a-layout>
   </a-layout>
+  <router-view v-else :key="$route.fullPath" />
 </template>
 
 <script setup>
@@ -52,9 +62,10 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   IconDashboard, IconSearch, IconFilter, IconStar,
-  IconLayers, IconDownload, IconSync,
+  IconLayers, IconDownload, IconSync, IconUser,
 } from '@arco-design/web-vue/es/icon'
 import { fmtDateLocal } from './utils/date.js'
+import { authState, hasPerm, logout } from './utils/auth.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -62,15 +73,17 @@ const collapsed = ref(false)
 
 const NAV = {
   home: '市场概览', search: '股票搜索', weeks: '周文件下载', extra: '市场深度',
-  sync: '数据更新', screener: '策略选股', watchlist: '自选股',
+  sync: '数据更新', screener: '策略选股', watchlist: '自选股', users: '用户管理',
   chart: 'K线行情', company: '公司详情',
 }
+const can = (perm) => hasPerm(perm)
 const activeKey = computed(() => {
   if (route.name === 'weeks') return 'weeks'
   if (route.name === 'extra') return 'extra'
   if (route.name === 'sync') return 'sync'
   if (route.name === 'screener') return 'screener'
   if (route.name === 'watchlist') return 'watchlist'
+  if (route.name === 'users') return 'users'
   if (route.name === 'search' || route.name === 'chart' || route.name === 'company') return 'search'
   return 'home'
 })
@@ -82,7 +95,15 @@ const pageTitle = computed(() => {
 const today = computed(() => fmtDateLocal(new Date()))
 
 function onMenuClick(key) {
-  router.push(key === 'weeks' ? '/weeks' : key === 'extra' ? '/extra' : key === 'sync' ? '/sync' : key === 'screener' ? '/screener' : key === 'watchlist' ? '/watchlist' : key === 'search' ? '/search' : '/')
+  const paths = {
+    weeks: '/weeks', extra: '/extra', sync: '/sync', screener: '/screener',
+    watchlist: '/watchlist', search: '/search', users: '/users',
+  }
+  router.push(paths[key] || '/')
+}
+
+function onUserMenu(v) {
+  if (v === 'logout') logout()
 }
 </script>
 
