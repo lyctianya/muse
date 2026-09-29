@@ -137,36 +137,39 @@ def import_table(conn: psycopg.Connection, table: str, path: Path) -> int:
 
 
 def import_holder_trade(conn: psycopg.Connection, path: Path) -> int:
-    """holder_trade 用 INSERT ... ON CONFLICT DO NOTHING（防重）。"""
+    """holder_trade（Tushare stk_holdertrade 口径，schema_tushare_full3.sql）。
+    复合主键 ON CONFLICT DO UPDATE，幂等。"""
     pf = pq.ParquetFile(path)
     total = 0
-    cols = ["market", "symbol", "holder_name", "trade_type", "trade_date",
-            "shares", "price", "amount", "ratio", "data"]
+    cols = ["market", "symbol", "ann_date", "holder_name", "holder_type",
+            "in_de", "change_vol", "change_ratio", "after_share",
+            "after_ratio", "avg_price", "begin_date", "close_date"]
+    pk = ["market", "symbol", "ann_date", "holder_name", "change_vol",
+          "begin_date"]
+    set_clause = ", ".join(
+        f"{c}=EXCLUDED.{c}" for c in cols if c not in pk) + ", updated_at=now()"
     with conn.cursor() as cur:
         for i in range(pf.num_row_groups):
             df = pf.read_row_group(i).to_pandas()
+            rows = []
             for _, row in df.iterrows():
                 vals = []
                 for c in cols:
                     v = row[c] if c in row else None
-                    if c.endswith("_date") and v is not None:
+                    if isinstance(v, float) and pd.isna(v):
+                        v = None
+                    elif c.endswith("_date") and v is not None:
                         v = pd.to_datetime(v).date()
-                    if c == "data" and isinstance(v, str):
-                        try:
-                            v = json.loads(v)
-                        except Exception:
-                            pass
-                    vals.append(None if pd.isna(v) else v)
-                cur.execute(
-                    """INSERT INTO holder_trade
-                       (market, symbol, holder_name, trade_type, trade_date,
-                        shares, price, amount, ratio, data)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
-                       ON CONFLICT (market, symbol, holder_name, trade_type,
-                                    trade_date, shares) DO NOTHING""",
-                    [json.dumps(v, ensure_ascii=False)
-                     if isinstance(v, (dict, list)) else v for v in vals])
-                total += 1
+                    vals.append(v)
+                rows.append(tuple(vals))
+            if not rows:
+                continue
+            cur.executemany(
+                f"""INSERT INTO holder_trade ({", ".join(cols)})
+                    VALUES ({", ".join(["%s"] * len(cols))})
+                    ON CONFLICT ({", ".join(pk)}) DO UPDATE SET {set_clause}""",
+                rows)
+            total += len(rows)
         conn.commit()
     log.info("[holder_trade] 完成 ~%d 行", total)
     return total

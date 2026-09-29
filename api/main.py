@@ -19,9 +19,14 @@
                                         /api/disclosure, /api/margin,
                                         /api/margin-detail, /api/stk-limit,
                                         /api/fina-audit, /api/new-share,
-                                        /api/managers
-    同步管理  api/routers/sync.py        /api/sync/status, /api/sync/run,
-                                        /api/sync/jobs
+                                        /api/managers, /api/share-float,
+                                        /api/block-trade, /api/adj-factor,
+                                        /api/repurchase, /api/pledge-detail,
+                                        /api/index-basic, /api/index-weight,
+                                        /api/index-member, /api/cyq,
+                                        /api/hk-hold
+    同步管理  api/routers/sync.py        /api/sync/status, /api/sync/refresh-status,
+                                        /api/sync/run, /api/sync/jobs
     策略选股  api/routers/screener.py    /api/screener/fields, /api/screener/run
     估值分位  api/routers/valuation.py   /api/valuation-quantile
     自选股    api/routers/watchlist.py   /api/watchlist（GET/POST/PUT/DELETE）
