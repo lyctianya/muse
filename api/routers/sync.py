@@ -1,12 +1,14 @@
 """数据同步管理：表状态检查 + 回填任务触发。
 
-GET  /api/sync/status  各表数据量/最新日期/是否需要更新
-POST /api/sync/run     启动回填任务（全局同时只允许一个 running）
-GET  /api/sync/jobs    任务列表（含日志尾部）
+GET  /api/sync/status          读 sync_status 水位（不扫业务表）
+POST /api/sync/refresh-status  从业务表重扫写入 sync_status
+POST /api/sync/run             启动回填任务（全局同时只允许一个 running）
+GET  /api/sync/jobs            任务列表（含日志尾部）
 
 回填通过 subprocess 以 `sys.executable -m ...` 方式启动，
 环境变量继承（TUSHARE_TOKEN、DATABASE_URL 等），
 日志落到项目根 logs/sync_{job_id}.log。
+任务成功结束后会刷新对应表的 sync_status。
 """
 import logging
 import os
@@ -20,7 +22,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..deps import _conn
+from fetcher.sync_registry import DAILY_COLS, TABLES
+from fetcher import sync_status as ss
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -28,102 +31,6 @@ router = APIRouter()
 ROOT = Path(__file__).resolve().parents[2]
 LOG_DIR = ROOT / "logs"
 LOG_DIR.mkdir(exist_ok=True)
-
-# 表元数据：key / 中文名 / 分组 / 日期列(None=无) / 回填模块 / --only 参数
-# module: fundamentals=基本面全量命令 / extra=增量 / full=全量接口 / None=无自动命令
-TABLES = [
-    {"key": "daily_bars", "name": "行情日线", "group": "行情",
-     "date_col": "trade_date", "module": None, "only": None},
-    # 基本面
-    {"key": "company_info", "name": "公司基本信息", "group": "基本面",
-     "date_col": None, "module": "fundamentals", "only": None},
-    {"key": "fin_income", "name": "利润表", "group": "基本面",
-     "date_col": "end_date", "module": "fundamentals", "only": None},
-    {"key": "fin_balance", "name": "资产负债表", "group": "基本面",
-     "date_col": "end_date", "module": "fundamentals", "only": None},
-    {"key": "fin_cashflow", "name": "现金流量表", "group": "基本面",
-     "date_col": "end_date", "module": "fundamentals", "only": None},
-    {"key": "fin_indicator", "name": "财务指标", "group": "基本面",
-     "date_col": "end_date", "module": "fundamentals", "only": None},
-    {"key": "top_holders", "name": "十大股东", "group": "基本面",
-     "date_col": "report_date", "module": "fundamentals", "only": None},
-    {"key": "holder_number", "name": "股东人数", "group": "基本面",
-     "date_col": "report_date", "module": "fundamentals", "only": None},
-    {"key": "pledge_info", "name": "股权质押", "group": "基本面",
-     "date_col": "stat_date", "module": "fundamentals", "only": None},
-    # 增量
-    {"key": "daily_basic", "name": "每日指标", "group": "增量",
-     "date_col": "trade_date", "module": "extra", "only": "daily_basic"},
-    {"key": "moneyflow", "name": "资金流向", "group": "增量",
-     "date_col": "trade_date", "module": "extra", "only": "moneyflow"},
-    {"key": "suspend", "name": "停复牌", "group": "增量",
-     "date_col": "suspend_date", "module": "extra", "only": "moneyflow"},
-    {"key": "dividend", "name": "分红送股", "group": "增量",
-     "date_col": "ann_date", "module": "extra", "only": "dividend"},
-    {"key": "forecast", "name": "业绩预告", "group": "增量",
-     "date_col": "ann_date", "module": "extra", "only": "forecast"},
-    {"key": "express", "name": "业绩快报", "group": "增量",
-     "date_col": "ann_date", "module": "extra", "only": "forecast"},
-    # 全量接口
-    {"key": "fina_mainbz", "name": "主营构成", "group": "全量接口",
-     "date_col": "end_date", "module": "full", "only": "mainbz"},
-    {"key": "company_detail", "name": "公司详情", "group": "全量接口",
-     "date_col": None, "module": "full", "only": "company_detail"},
-    {"key": "namechange", "name": "曾用名", "group": "全量接口",
-     "date_col": "start_date", "module": "full", "only": "namechange"},
-    {"key": "top_list", "name": "龙虎榜", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "top_list"},
-    {"key": "top_inst", "name": "机构明细", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "top_list"},
-    {"key": "index_daily", "name": "指数日线", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "index"},
-    {"key": "moneyflow_hsgt", "name": "北向资金", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "hsgt_flow"},
-    {"key": "hsgt_top10", "name": "陆股通十大", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "hsgt_top10"},
-    {"key": "disclosure_date", "name": "披露计划", "group": "全量接口",
-     "date_col": "end_date", "module": "full", "only": "disclosure"},
-    {"key": "margin", "name": "两融汇总", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "margin"},
-    {"key": "margin_detail", "name": "两融明细", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "margin"},
-    {"key": "stk_limit", "name": "涨跌停", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "stk_limit"},
-    {"key": "fina_audit", "name": "审计意见", "group": "全量接口",
-     "date_col": "end_date", "module": "full", "only": "fina_audit"},
-    {"key": "new_share", "name": "IPO新股", "group": "全量接口",
-     "date_col": "list_date", "module": "full", "only": "new_share"},
-    {"key": "managers", "name": "管理层", "group": "全量接口",
-     "date_col": None, "module": "full", "only": "managers"},
-    {"key": "share_float", "name": "限售解禁", "group": "全量接口",
-     "date_col": "float_date", "module": "full", "only": "share_float"},
-    {"key": "block_trade", "name": "大宗交易", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "block_trade"},
-    # 15000积分档补全
-    {"key": "adj_factor", "name": "复权因子", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "adj_factor"},
-    {"key": "holder_trade", "name": "股东增减持", "group": "全量接口",
-     "date_col": "ann_date", "module": "full", "only": "holdertrade"},
-    {"key": "daily_ts", "name": "A股日线(Tushare)", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "daily_ts"},
-    {"key": "repurchase", "name": "股票回购", "group": "全量接口",
-     "date_col": "ann_date", "module": "full", "only": "repurchase"},
-    {"key": "pledge_detail", "name": "质押明细", "group": "全量接口",
-     "date_col": "ann_date", "module": "full", "only": "pledge_detail"},
-    {"key": "index_basic", "name": "指数基本信息", "group": "全量接口",
-     "date_col": None, "module": "full", "only": "index_info"},
-    {"key": "index_weight", "name": "指数权重", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "index_info"},
-    {"key": "index_member", "name": "指数成分", "group": "全量接口",
-     "date_col": None, "module": "full", "only": "index_info"},
-    {"key": "cyq_perf", "name": "每日筹码分布", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "cyq_perf"},
-    {"key": "hk_hold", "name": "沪深港股通持股", "group": "全量接口",
-     "date_col": "trade_date", "module": "full", "only": "hk_hold"},
-]
-
-# 按日更新的日期列（最新 < 今天即需更新）；其余日期列按季度判定
-DAILY_COLS = {"trade_date", "suspend_date", "ann_date", "float_date"}
 
 
 def _needs_update(date_col: str, latest, rows: int) -> bool:
@@ -137,41 +44,66 @@ def _needs_update(date_col: str, latest, rows: int) -> bool:
     return latest < quarter_start
 
 
+def _status_rows_from_watermark(watermarks: dict) -> list:
+    """用 sync_status 水位 + TABLES 元数据拼前端行。"""
+    out = []
+    for t in TABLES:
+        key, dc = t["key"], t["date_col"]
+        wm = watermarks.get(key)
+        if wm is None:
+            rows, latest, missing = 0, None, False
+            # 水位缺失 ≠ 业务表缺失；标记为需更新，提示用户点「重新扫描」
+            needs = True
+            watermark_missing = True
+        else:
+            rows = int(wm.get("row_count") or 0)
+            latest = wm.get("latest_date")
+            missing = False
+            watermark_missing = False
+            if dc is None:
+                needs = rows == 0
+            else:
+                needs = _needs_update(dc, latest, rows)
+        last_synced = wm.get("last_synced_at") if wm else None
+        out.append({
+            "key": key, "name": t["name"], "group": t["group"],
+            "rows": rows,
+            "latest_date": latest.isoformat() if latest else None,
+            "last_synced_at": (
+                last_synced.isoformat(timespec="seconds")
+                if last_synced else None
+            ),
+            "needs_update": needs, "missing": missing,
+            "watermark_missing": watermark_missing,
+            "has_command": t["module"] is not None,
+        })
+    return out
+
+
 @router.get("/api/sync/status")
 def sync_status():
-    """各表数据量 / 最新日期 / 是否需要更新。"""
-    out = []
-    with _conn() as conn:
-        with conn.cursor() as cur:
-            for t in TABLES:
-                key, dc = t["key"], t["date_col"]
-                try:
-                    if dc:
-                        cur.execute(
-                            f'SELECT COUNT(*), MAX("{dc}") FROM "{key}"')
-                    else:
-                        cur.execute(f'SELECT COUNT(*) FROM "{key}"')
-                    row = cur.fetchone()
-                    rows = row[0]
-                    latest = row[1] if dc else None
-                    missing = False
-                except Exception:  # noqa: BLE001 表不存在等
-                    conn.rollback()
-                    rows, latest, missing = 0, None, True
-                if missing:
-                    needs = True
-                elif dc is None:
-                    needs = rows == 0
-                else:
-                    needs = _needs_update(dc, latest, rows)
-                out.append({
-                    "key": key, "name": t["name"], "group": t["group"],
-                    "rows": rows,
-                    "latest_date": latest.isoformat() if latest else None,
-                    "needs_update": needs, "missing": missing,
-                    "has_command": t["module"] is not None,
-                })
-    return out
+    """各表数据量 / 最新日期 / 是否需要更新（读 sync_status，不扫业务表）。"""
+    watermarks = ss.get_all()
+    return _status_rows_from_watermark(watermarks)
+
+
+class RefreshBody(BaseModel):
+    tables: list[str] | None = None  # None / [] = 全部
+
+
+@router.post("/api/sync/refresh-status")
+def sync_refresh_status(body: RefreshBody | None = None):
+    """从业务表扫 COUNT/MAX，写回 sync_status。首次部署或水位不准时用。"""
+    tables = (body.tables if body and body.tables else None)
+    if tables:
+        results = ss.refresh_tables(tables)
+    else:
+        results = ss.refresh_all()
+    watermarks = ss.get_all()
+    return {
+        "refreshed": results,
+        "status": _status_rows_from_watermark(watermarks),
+    }
 
 
 # ---------------------------------------------------------------- 任务管理
@@ -188,17 +120,17 @@ def _build_cmd(t: dict):
     mod = t["module"]
     if mod == "fundamentals":
         return [sys.executable, "-m", "fetcher.jobs.backfill_fundamentals",
-                "--source", "tushare"]
+                "--source", "tushare"], "fundamentals"
     if mod == "extra":
-        return [sys.executable, "-m", "fetcher.jobs.backfill_tushare_extra",
-                "--only", t["only"]]
+        return ([sys.executable, "-m", "fetcher.jobs.backfill_tushare_extra",
+                 "--only", t["only"]], t["only"])
     if mod == "full":
-        return [sys.executable, "-m", "fetcher.jobs.backfill_tushare_full",
-                "--only", t["only"]]
-    return None
+        return ([sys.executable, "-m", "fetcher.jobs.backfill_tushare_full",
+                 "--only", t["only"]], t["only"])
+    return None, None
 
 
-def _watch(job_id: str, proc: "subprocess.Popen", log_f) -> None:
+def _watch(job_id: str, proc: "subprocess.Popen", log_f, job_only: str) -> None:
     rc = proc.wait()
     log_f.close()
     with _jobs_lock:
@@ -206,6 +138,12 @@ def _watch(job_id: str, proc: "subprocess.Popen", log_f) -> None:
         if job:
             job["status"] = "done" if rc == 0 else "failed"
             job["finished_at"] = datetime.now().isoformat(timespec="seconds")
+    # 成功时再扫一次水位（进程内 mark_synced 已写；此处兜底）
+    if rc == 0 and job_only:
+        try:
+            ss.mark_synced_from_job(job_only)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("任务结束后刷新 sync_status 失败：%s", exc)
     log.info("同步任务 %s 结束，返回码 %s", job_id, rc)
 
 
@@ -215,7 +153,7 @@ def sync_run(body: RunBody):
     t = next((x for x in TABLES if x["key"] == body.table), None)
     if not t:
         raise HTTPException(status_code=404, detail=f"未知表：{body.table}")
-    cmd = _build_cmd(t)
+    cmd, job_only = _build_cmd(t)
     if not cmd:
         raise HTTPException(status_code=400,
                             detail=f"表 {body.table} 无自动回填命令")
@@ -234,11 +172,12 @@ def sync_run(body: RunBody):
         )
         _jobs[job_id] = {
             "job_id": job_id, "table": t["key"], "table_name": t["name"],
+            "job_only": job_only,
             "status": "running",
             "started_at": datetime.now().isoformat(timespec="seconds"),
             "finished_at": None, "log_file": str(log_path),
         }
-    threading.Thread(target=_watch, args=(job_id, proc, log_f),
+    threading.Thread(target=_watch, args=(job_id, proc, log_f, job_only),
                      daemon=True).start()
     log.info("启动同步任务 %s：%s", job_id, " ".join(cmd))
     return {"job_id": job_id}

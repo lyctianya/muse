@@ -16,10 +16,20 @@
     <a-card title="数据更新">
       <template #extra>
         <a-space>
-          <span style="color: #86909c; font-size: 12px">检查各表数据新鲜度，一键触发回填（同时只运行一个任务）</span>
-          <a-button type="primary" size="small" :loading="checking" @click="loadStatus">全部检查</a-button>
+          <span style="color: #86909c; font-size: 12px">
+            状态以 sync_status 水位表为准；「重新扫描」才会对业务表做 COUNT/MAX
+          </span>
+          <a-button size="small" :loading="checking" @click="loadStatus">刷新状态</a-button>
+          <a-button type="primary" size="small" :loading="scanning" @click="rescan">
+            重新扫描
+          </a-button>
         </a-space>
       </template>
+
+      <a-alert v-if="anyWatermarkMissing" type="warning" style="margin-bottom: 16px"
+               :closable="false">
+        部分表尚无水位记录。请先点「重新扫描」从业务表初始化 sync_status。
+      </a-alert>
 
       <div v-for="g in groups" :key="g" style="margin-bottom: 24px">
         <h3 style="margin: 0 0 12px">{{ g }} <span style="color: #86909c; font-weight: normal; font-size: 12px">（{{ byGroup[g].length }} 张表）</span></h3>
@@ -27,15 +37,19 @@
           <template #columns>
             <a-table-column title="表名" data-index="key" :width="170" />
             <a-table-column title="说明" data-index="name" :width="130" />
-            <a-table-column title="数据量" :width="130">
+            <a-table-column title="数据量" :width="120">
               <template #cell="{ record }">{{ record.rows.toLocaleString('zh-CN') }}</template>
             </a-table-column>
-            <a-table-column title="最新日期" :width="130">
+            <a-table-column title="最新日期" :width="120">
               <template #cell="{ record }">{{ record.latest_date || '--' }}</template>
             </a-table-column>
-            <a-table-column title="状态" :width="120">
+            <a-table-column title="上次同步" :width="170">
+              <template #cell="{ record }">{{ record.last_synced_at || '--' }}</template>
+            </a-table-column>
+            <a-table-column title="状态" :width="130">
               <template #cell="{ record }">
-                <a-tag v-if="record.missing" color="red">表缺失</a-tag>
+                <a-tag v-if="record.watermark_missing" color="orangered">无水位</a-tag>
+                <a-tag v-else-if="record.missing" color="red">表缺失</a-tag>
                 <a-tag v-else-if="record.needs_update" color="orange">需要更新</a-tag>
                 <a-tag v-else color="green">数据最新</a-tag>
               </template>
@@ -87,6 +101,7 @@ const groups = ['行情', '基本面', '增量', '全量接口']
 const status = ref([])
 const jobs = ref([])
 const checking = ref(false)
+const scanning = ref(false)
 const updatingKey = ref('')
 
 const byGroup = computed(() => {
@@ -95,9 +110,11 @@ const byGroup = computed(() => {
   return m
 })
 const runningJob = computed(() => jobs.value.find((j) => j.status === 'running'))
+const anyWatermarkMissing = computed(() =>
+  status.value.some((t) => t.watermark_missing))
 
-async function getJSON(url) {
-  const res = await fetch(url)
+async function getJSON(url, opts) {
+  const res = await fetch(url, opts)
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.detail || `HTTP ${res.status}`)
@@ -113,6 +130,24 @@ async function loadStatus() {
     Message.error(`状态检查失败：${e.message}`)
   } finally {
     checking.value = false
+  }
+}
+
+async function rescan() {
+  scanning.value = true
+  try {
+    const data = await getJSON('/api/sync/refresh-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    status.value = data.status || []
+    const n = (data.refreshed || []).filter((r) => r.ok).length
+    Message.success(`已从业务表扫描 ${n} 张表并写入 sync_status`)
+  } catch (e) {
+    Message.error(`重新扫描失败：${e.message}`)
+  } finally {
+    scanning.value = false
   }
 }
 

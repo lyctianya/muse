@@ -97,6 +97,8 @@ def main() -> None:
                 fn(args.from_date)
             else:
                 fn()
+            from fetcher import sync_status as ss
+            ss.mark_synced_from_job(name)
         except Exception as exc:  # noqa: BLE001
             log.warning("%s 异常中断：%s", label, exc)
     log.info("全部完成，总耗时 %.1fs", time.time() - t0)

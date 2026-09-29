@@ -78,6 +78,15 @@ psql "$DATABASE_URL" -f sql/schema.sql
 # Windows PowerShell 示例
 $env:PGPASSWORD = 'postgres'
 psql -U stockapp -h 127.0.0.1 -p 5432 -d stocks -f sql/schema.sql
+psql -U stockapp -h 127.0.0.1 -p 5432 -d stocks -f sql/schema_sync_status.sql
+```
+
+同步水位表 `sync_status`：记录各业务表最新日期/行数，前端「数据更新」页与
+增量回填起点以此为准（避免每次扫业务表做 `COUNT/MAX`）。建表后初始化：
+
+```bash
+.venv/bin/python -m fetcher.jobs.refresh_sync_status          # Linux / macOS
+.\.venv\Scripts\python -m fetcher.jobs.refresh_sync_status    # Windows
 ```
 
 **3) Python 虚拟环境 + 后端依赖**

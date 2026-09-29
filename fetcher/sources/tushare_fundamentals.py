@@ -154,22 +154,40 @@ def _incremental_start(
     date_col: str,
     default: date,
 ) -> date:
-    """解析增量起点：显式 from_date > 库内 max(date_col) > default。
+    """解析增量起点：显式 from_date > sync_status.latest_date > 库内 max > default。
 
-    有库内日期时从该日重拉（覆盖当日更新），避免漏数。
+    有水位/库内日期时从该日重拉（覆盖当日更新），避免漏数。
+    优先读 sync_status，避免每次对业务表做 MAX 全表扫描。
     """
     explicit = _to_date(from_date)
     if explicit:
         return explicit
-    # 仅允许已知标识符，防止拼接注入
     if not table.replace("_", "").isalnum() or not date_col.replace("_", "").isalnum():
         return default
+
+    # 1) 同步水位表
+    try:
+        from fetcher import sync_status as ss
+        latest = ss.get_latest(table)
+        if latest:
+            log.info("%s 增量：sync_status.latest_date=%s", table, latest)
+            return latest
+    except Exception as exc:  # noqa: BLE001
+        log.warning("读 sync_status[%s] 失败：%s", table, exc)
+
+    # 2) 回退：扫业务表一次，并回写水位
     try:
         with db.get_pool().connection() as conn, conn.cursor() as cur:
             cur.execute(f"SELECT max({date_col}) FROM {table}")  # noqa: S608
             row = cur.fetchone()
             if row and row[0]:
-                log.info("%s 增量：库内 max(%s)=%s", table, date_col, row[0])
+                log.info("%s 增量：库内 max(%s)=%s（回写 sync_status）",
+                         table, date_col, row[0])
+                try:
+                    from fetcher import sync_status as ss
+                    ss.upsert(table, latest_date=row[0])
+                except Exception:  # noqa: BLE001
+                    pass
                 return row[0]
     except Exception as exc:  # noqa: BLE001
         log.warning("查询 %s.%s 失败，回退默认起点 %s：%s",

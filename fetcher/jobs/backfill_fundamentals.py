@@ -204,6 +204,11 @@ def main() -> None:
     # 全市场维度顺手跑一遍（仅 eastmoney 源）
     if args.source == "eastmoney":
         backfill_market_wide()
+    try:
+        from fetcher import sync_status as ss
+        ss.mark_synced_from_job("fundamentals")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("刷新 sync_status 失败：%s", exc)
 
 
 if __name__ == "__main__":
