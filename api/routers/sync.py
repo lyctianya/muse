@@ -33,6 +33,33 @@ LOG_DIR = ROOT / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 
+def _merge_dotenv(env: dict) -> dict:
+    """把项目根 .env 合并进 env（已有键不覆盖）。"""
+    dotenv = ROOT / ".env"
+    if not dotenv.exists():
+        return env
+    try:
+        for raw in dotenv.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k, v = k.strip(), v.strip().strip('"').strip("'")
+            env.setdefault(k, v)
+    except OSError as exc:
+        log.warning("读取 .env 失败：%s", exc)
+    return env
+
+
+def _subprocess_env() -> dict:
+    """回填子进程环境：继承当前进程 + 补齐 .env，并强制 UTF-8 日志。"""
+    env = _merge_dotenv(os.environ.copy())
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("PGCLIENTENCODING", "UTF8")
+    return env
+
+
 def _needs_update(date_col: str, latest, rows: int) -> bool:
     today = date.today()
     if latest is None:
@@ -64,6 +91,10 @@ def _status_rows_from_watermark(watermarks: dict) -> list:
                 needs = rows == 0
             else:
                 needs = _needs_update(dc, latest, rows)
+            # 行数为 0 一律视为需要更新（即使日期判定过不去）
+            if rows == 0:
+                needs = True
+                missing = True
         last_synced = wm.get("last_synced_at") if wm else None
         out.append({
             "key": key, "name": t["name"], "group": t["group"],
@@ -157,6 +188,16 @@ def sync_run(body: RunBody):
     if not cmd:
         raise HTTPException(status_code=400,
                             detail=f"表 {body.table} 无自动回填命令")
+
+    env = _subprocess_env()
+    # Tushare 回填任务必须有 token；缺了会秒退且日志难读，启动前直接拦下
+    if t["module"] in ("fundamentals", "extra", "full"):
+        if not (env.get("TUSHARE_TOKEN") or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail="未配置 TUSHARE_TOKEN：请写入项目根目录 .env 后重启 API",
+            )
+
     with _jobs_lock:
         for j in _jobs.values():
             if j["status"] == "running":
@@ -168,7 +209,7 @@ def sync_run(body: RunBody):
         log_f = open(log_path, "w", encoding="utf-8")
         proc = subprocess.Popen(
             cmd, cwd=str(ROOT), stdout=log_f, stderr=subprocess.STDOUT,
-            env=os.environ.copy(),
+            env=env,
         )
         _jobs[job_id] = {
             "job_id": job_id, "table": t["key"], "table_name": t["name"],

@@ -19,6 +19,8 @@ TABLES = [
      "date_col": "report_date", "module": "fundamentals", "only": None},
     {"key": "fin_indicator", "name": "财务指标", "group": "基本面",
      "date_col": "report_date", "module": "fundamentals", "only": None},
+    {"key": "main_business", "name": "主营业务(EM)", "group": "基本面",
+     "date_col": "report_date", "module": "fundamentals", "only": None},
     {"key": "top_holders", "name": "十大股东", "group": "基本面",
      "date_col": "report_date", "module": "fundamentals", "only": None},
     {"key": "holder_number", "name": "股东人数", "group": "基本面",
@@ -129,8 +131,8 @@ JOB_TABLES = {
     # fundamentals（整包）
     "fundamentals": [
         "company_info", "fin_income", "fin_balance", "fin_cashflow",
-        "fin_indicator", "top_holders", "holder_number", "pledge_info",
-        "holder_trade",
+        "fin_indicator", "main_business", "top_holders", "holder_number",
+        "pledge_info", "holder_trade",
     ],
 }
 

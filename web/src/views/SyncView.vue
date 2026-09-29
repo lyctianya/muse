@@ -49,7 +49,7 @@
             <a-table-column title="状态" :width="130">
               <template #cell="{ record }">
                 <a-tag v-if="record.watermark_missing" color="orangered">无水位</a-tag>
-                <a-tag v-else-if="record.missing" color="red">表缺失</a-tag>
+                <a-tag v-else-if="record.missing || record.rows === 0" color="red">无数据</a-tag>
                 <a-tag v-else-if="record.needs_update" color="orange">需要更新</a-tag>
                 <a-tag v-else color="green">数据最新</a-tag>
               </template>
@@ -71,7 +71,8 @@
 
       <!-- 历史任务 -->
       <h3 style="margin: 0 0 12px">历史任务</h3>
-      <a-table :data="jobs" :pagination="false" size="small" row-key="job_id" :bordered="true">
+      <a-table :data="jobs" :pagination="false" size="small" row-key="job_id" :bordered="true"
+               :expandable="expandable">
         <template #columns>
           <a-table-column title="任务" data-index="job_id" :width="100" />
           <a-table-column title="表" data-index="table_name" :width="130" />
@@ -86,6 +87,9 @@
           <a-table-column title="结束" :width="180">
             <template #cell="{ record }">{{ record.finished_at || '--' }}</template>
           </a-table-column>
+        </template>
+        <template #expand-row="{ record }">
+          <pre style="margin: 0; white-space: pre-wrap; font-size: 12px; max-height: 240px; overflow: auto">{{ record.log_tail || '（无日志）' }}</pre>
         </template>
       </a-table>
       <a-empty v-if="!jobs.length" description="暂无任务" style="margin-top: 12px" />
@@ -103,6 +107,7 @@ const jobs = ref([])
 const checking = ref(false)
 const scanning = ref(false)
 const updatingKey = ref('')
+const expandable = { title: '日志', width: 60 }
 
 const byGroup = computed(() => {
   const m = {}

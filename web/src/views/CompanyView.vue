@@ -66,16 +66,35 @@
         @change="onTabChange"
       >
         <a-tab-pane key="income" title="利润表">
-          <fin-table :rows="financials.income" />
+          <FinTable
+            :rows="financials.income"
+            :extras="[
+              { key: 'revenue', title: '营收' },
+              { key: 'net_profit', title: '净利润' },
+            ]"
+          />
         </a-tab-pane>
         <a-tab-pane key="balance" title="资产负债表">
-          <fin-table :rows="financials.balance" />
+          <FinTable
+            :rows="financials.balance"
+            :extras="[
+              { key: 'total_assets', title: '总资产' },
+              { key: 'total_liab', title: '总负债' },
+            ]"
+          />
         </a-tab-pane>
         <a-tab-pane key="cashflow" title="现金流量表">
-          <fin-table :rows="financials.cashflow" />
+          <FinTable :rows="financials.cashflow" />
         </a-tab-pane>
         <a-tab-pane key="indicator" title="财务指标">
-          <fin-table :rows="financials.indicator" />
+          <FinTable
+            :rows="financials.indicator"
+            :extras="[
+              { key: 'roe', title: 'ROE%' },
+              { key: 'gross_margin', title: '毛利率%' },
+              { key: 'net_margin', title: '净利率%' },
+            ]"
+          />
         </a-tab-pane>
         <a-tab-pane key="business" title="主营业务">
           <a-table :data="business" :pagination="{ pageSize: 20 }" size="small">
@@ -607,12 +626,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, computed, h, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconLeft } from '@arco-design/web-vue/es/icon'
 import * as echarts from 'echarts'
 import WatchStar from '../components/WatchStar.vue'
+import FinTable from '../components/FinTable.vue'
 
 const props = defineProps({ symbol: String })
 const route = useRoute()
@@ -718,28 +738,6 @@ const marginDetailEl = ref(null)
 let marginDetailChart = null
 const extraLoaded = {}
 const activeTab = ref('income')
-
-// 通用财务表：把 data JSON 的键值对转成行
-const FinTable = {
-  props: ['rows'],
-  setup(p) {
-    const columns = computed(() => {
-      if (!p.rows.length) return []
-      const keys = Object.keys(p.rows[0].data || {})
-      return [
-        { title: '报告期', dataIndex: 'report_date', width: 120, fixed: 'left' },
-        ...keys.slice(0, 12).map((k) => ({ title: k, dataIndex: `data.${k}`, width: 140 })),
-      ]
-    })
-    return () =>
-      p.rows.length
-        ? h('a-table', { data: p.rows, pagination: { pageSize: 10 }, size: 'small', scroll: { x: 1600 } },
-            { columns: () => columns.value.map((c) =>
-              h('a-table-column', { title: c.title, dataIndex: c.dataIndex, width: c.width })) })
-        : h('a-empty', { description: '暂无数据' })
-  },
-}
-const finTable = FinTable
 
 function fmtNum(v) {
   if (v == null) return '--'
