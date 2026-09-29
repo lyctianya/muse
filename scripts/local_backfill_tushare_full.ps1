@@ -1,4 +1,4 @@
-# Tushare 全量接口一键回填（本地 PowerShell，15000积分档 27 张表）
+﻿# Tushare 全量接口一键回填（本地 PowerShell，15000积分档 27 张表）
 # 先决条件：.env 配好 DATABASE_URL；$env:TUSHARE_TOKEN=<redacted>
 # 走中转站（如 DaoShare/teajoin）时：$env:TUSHARE_TOKEN=<redacted>
 param(
@@ -11,6 +11,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:PGCLIENTENCODING = "UTF8"
 function Step($msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 
 Step "1/4 拉取最新代码"

@@ -1,4 +1,4 @@
-# Tushare 增量数据一键回填（本地 PowerShell）
+﻿# Tushare 增量数据一键回填（本地 PowerShell）
 # 先决条件：.env 配好 DATABASE_URL；$env:TUSHARE_TOKEN 已设置
 param(
   [string]$Only = "all",     # all|daily_basic|moneyflow|dividend|forecast
@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:PGCLIENTENCODING = "UTF8"
 function Step($msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 
 Step "1/4 拉取最新代码"

@@ -1080,10 +1080,12 @@ def _fetch_pledge_detail_one(symbol: str, cutoff: date) -> int:
         name = str(row.get("holder_name") or "").strip()
         if not name:
             continue
+        # PK 含 start_date，空值回退到公告日（源数据偶发缺开始日）
+        start = _to_date(row.get("start_date")) or ad
         rows.append((
             symbol, ad, name,
             _to_float(row.get("pledge_amount")),
-            _to_date(row.get("start_date")),
+            start,
             _to_date(row.get("end_date")),
             str(row.get("is_release") or ""),
             _to_date(row.get("release_date")),
