@@ -24,6 +24,8 @@ Step "3/4 建全量表（full/full2/full3）"
 psql "$env:DATABASE_URL" -f sql/schema_tushare_full.sql
 psql "$env:DATABASE_URL" -f sql/schema_tushare_full2.sql
 psql "$env:DATABASE_URL" -f sql/schema_tushare_full3.sql
+# 回填常用 postgres，API 用 stockapp：把新建表所有权交给 stockapp
+psql "$env:DATABASE_URL" -f sql/grant_stockapp.sql
 
 Step "4/4 回填全量数据"
 $args = @("-m", "fetcher.jobs.backfill_tushare_full", "--only", $Only)

@@ -38,6 +38,7 @@ git pull
 Step "创建基本面表结构"
 if (-not $env:DATABASE_URL) { throw "请先设置 `$env:DATABASE_URL" }
 psql "$env:DATABASE_URL" -f sql/schema_fundamentals.sql
+psql "$env:DATABASE_URL" -f sql/grant_stockapp.sql
 
 # 3. 装依赖
 Step "安装依赖"

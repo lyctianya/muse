@@ -17,6 +17,7 @@ Step "2/4 安装/更新依赖"
 
 Step "3/4 建增量表"
 psql "$env:DATABASE_URL" -f sql/schema_tushare_extra.sql
+psql "$env:DATABASE_URL" -f sql/grant_stockapp.sql
 
 Step "4/4 回填增量数据"
 $args = @("-m", "fetcher.jobs.backfill_tushare_extra", "--only", $Only)
