@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS posts (
     id            TEXT PRIMARY KEY,
     slug          TEXT NOT NULL UNIQUE,
     title         TEXT NOT NULL,
-    content_md    TEXT NOT NULL DEFAULT '',
+    content_html  TEXT NOT NULL DEFAULT '',
     excerpt       TEXT NOT NULL DEFAULT '',
     cover_file_id TEXT,
     category      TEXT NOT NULL DEFAULT '',
@@ -50,6 +50,17 @@ CREATE TABLE IF NOT EXISTS post_tags (
 def ensure_schema() -> None:
     with _conn() as conn, conn.cursor() as cur:
         cur.execute(SCHEMA_BLOG)
+        # 2026-10-01：Markdown 编辑器 → Tiptap 富文本，content_md 改名 content_html
+        cur.execute("""
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'posts' AND column_name = 'content_md')
+                   AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'posts' AND column_name = 'content_html') THEN
+                    ALTER TABLE posts RENAME COLUMN content_md TO content_html;
+                END IF;
+            END $$;
+        """)
         conn.commit()
 
 
@@ -59,9 +70,17 @@ def _slugify(title: str) -> str:
     return slug or uuid.uuid4().hex[:8]
 
 
+def _excerpt(body: "PostIn") -> str:
+    if body.excerpt:
+        return body.excerpt
+    text = re.sub(r"<[^>]+>", "", body.content_html or "")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:120]
+
+
 class PostIn(BaseModel):
     title: str
-    content_md: str = ""
+    content_html: str = ""
     excerpt: str = ""
     cover_file_id: str | None = None
     category: str = ""
@@ -150,13 +169,13 @@ def get_post(slug: str, user: dict = Depends(get_current_user)):
         cur.execute(
             "SELECT p.id, p.slug, p.title, p.excerpt, p.cover_file_id, p.category, "
             "p.status, p.author_id, p.published_at, p.created_at, p.updated_at, "
-            "p.content_md FROM posts p WHERE p.slug = %s", (slug,))
+            "p.content_html FROM posts p WHERE p.slug = %s", (slug,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "文章不存在")
         keys = ("id", "slug", "title", "excerpt", "cover_file_id", "category",
                 "status", "author_id", "published_at", "created_at", "updated_at",
-                "content_md")
+                "content_html")
         d = dict(zip(keys, row))
         if d["status"] != "published" and not can_manage:
             raise HTTPException(403, "无权查看草稿")
@@ -180,11 +199,11 @@ def create_post(body: PostIn, user: dict = Depends(get_current_user)):
         if cur.fetchone():
             slug = f"{slug}-{pid[:6]}"
         cur.execute(
-            """INSERT INTO posts (id, slug, title, content_md, excerpt, cover_file_id,
+            """INSERT INTO posts (id, slug, title, content_html, excerpt, cover_file_id,
                                   category, status, author_id, published_at)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (pid, slug, body.title, body.content_md,
-             body.excerpt or body.content_md[:120], body.cover_file_id,
+            (pid, slug, body.title, body.content_html,
+             _excerpt(body), body.cover_file_id,
              body.category, body.status, str(user["id"]),
              now if body.status == "published" else None))
         _set_tags(cur, pid, body.tags)
@@ -206,15 +225,15 @@ def update_post(pid: str, body: PostIn):
         pub_at = now if (body.status == "published" and row[0] != "published") else None
         if pub_at:
             cur.execute(
-                """UPDATE posts SET title=%s, content_md=%s, excerpt=%s, cover_file_id=%s,
+                """UPDATE posts SET title=%s, content_html=%s, excerpt=%s, cover_file_id=%s,
                    category=%s, status=%s, published_at=%s, updated_at=now() WHERE id=%s""",
-                (body.title, body.content_md, body.excerpt or body.content_md[:120],
+                (body.title, body.content_html, _excerpt(body),
                  body.cover_file_id, body.category, body.status, pub_at, pid))
         else:
             cur.execute(
-                """UPDATE posts SET title=%s, content_md=%s, excerpt=%s, cover_file_id=%s,
+                """UPDATE posts SET title=%s, content_html=%s, excerpt=%s, cover_file_id=%s,
                    category=%s, status=%s, updated_at=now() WHERE id=%s""",
-                (body.title, body.content_md, body.excerpt or body.content_md[:120],
+                (body.title, body.content_html, _excerpt(body),
                  body.cover_file_id, body.category, body.status, pid))
         _set_tags(cur, pid, body.tags)
         conn.commit()

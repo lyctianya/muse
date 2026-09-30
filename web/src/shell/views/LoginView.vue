@@ -97,7 +97,8 @@ async function onRegister() {
 }
 
 function googleLogin() {
-  location.href = '/api/auth/google/login'
+  // 把前端源带给后端，OAuth 回调后跳回这里（而不是落在 8000）
+  location.href = '/api/auth/google/login?next=' + encodeURIComponent(location.origin + '/')
 }
 </script>
 

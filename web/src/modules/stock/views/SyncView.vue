@@ -100,6 +100,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import { getJSON, postJSON } from '../../../platform/utils/api.js'
 
 const groups = ['行情', '基本面', '增量', '全量接口']
 const status = ref([])

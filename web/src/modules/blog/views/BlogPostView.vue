@@ -31,7 +31,11 @@ const route = useRoute()
 const post = ref({})
 const loading = ref(true)
 const canManage = hasPerm('blog:manage')
-const html = computed(() => marked.parse(post.value.content_md || ''))
+const html = computed(() => {
+  const c = (post.value.content_html ?? post.value.content_md ?? '').trim()
+  if (!c) return ''
+  return c.startsWith('<') ? c : marked.parse(c) // 兼容旧 Markdown 文章
+})
 
 onMounted(async () => {
   try {

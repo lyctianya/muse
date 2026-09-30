@@ -305,7 +305,7 @@ def _google_redirect_uri(request: Request) -> str:
 
 
 @router.get("/api/auth/google/login")
-def google_login(request: Request):
+def google_login(request: Request, next: str = "/"):
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(500, "未配置 GOOGLE_CLIENT_ID")
     params = {
@@ -315,13 +315,26 @@ def google_login(request: Request):
         "scope": "openid email profile",
         "access_type": "offline",
         "prompt": "select_account",
+        "state": _safe_next(next),
     }
     url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
     return RedirectResponse(url)
 
 
+def _safe_next(next_url: str) -> str:
+    """OAuth 回跳地址白名单：只允许本站相对路径或本机开发源。"""
+    if not next_url:
+        return "/"
+    if next_url.startswith("/") and not next_url.startswith("//"):
+        return next_url
+    for prefix in ("http://127.0.0.1:", "http://localhost:"):
+        if next_url.startswith(prefix):
+            return next_url
+    return "/"
+
+
 @router.get("/api/auth/google/callback")
-def google_callback(request: Request, code: str = "", error: str = ""):
+def google_callback(request: Request, code: str = "", error: str = "", state: str = "/"):
     if error:
         raise HTTPException(400, f"Google 授权失败：{error}")
     if not code:
@@ -404,7 +417,7 @@ def google_callback(request: Request, code: str = "", error: str = ""):
         user["permissions"] = _user_perms(cur, row[0])
         user["roles"] = _user_roles(cur, row[0])
     access, refresh = _issue(user["id"], user["permissions"])
-    resp = RedirectResponse("/")
+    resp = RedirectResponse(_safe_next(state))
     _set_cookies(resp, access, refresh)
     return resp
 

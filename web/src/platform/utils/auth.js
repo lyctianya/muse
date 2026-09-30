@@ -23,5 +23,5 @@ export async function logout() {
     await postJSON('/api/auth/logout')
   } catch { /* ignore */ }
   authState.user = null
-  location.href = '/login'
+  // 不在这里跳转：由调用方用路由导航，保持在当前源（开发时是 5173）
 }

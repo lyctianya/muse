@@ -116,7 +116,10 @@ function onMenuClick(key) {
 }
 
 function onUserMenu(v) {
-  if (v === 'logout') logout()
+  if (v === 'logout') {
+    logout()
+    router.push('/login')
+  }
 }
 </script>
 
