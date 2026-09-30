@@ -175,6 +175,8 @@ async function save(status) {
     const body = {
       title: form.value.title.trim(),
       content_html: editor.value ? editor.value.getHTML() : '',
+      // content_md：兼容旧后端（Pydantic 会忽略未知字段，新后端用 content_html）
+      content_md: editor.value ? editor.value.getHTML() : '',
       category: form.value.category.trim(),
       cover_file_id: form.value.cover_file_id,
       status,
