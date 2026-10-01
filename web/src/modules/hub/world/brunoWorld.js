@@ -63,7 +63,8 @@ async function plantTrees(scene, visualPath, refsPath, trunkColor, leafA, leafB)
   const leafMatrices = []
   const m4 = new THREE.Matrix4()
   refs.traverse((o) => {
-    if (o.isMesh || !o.name || !o.name.startsWith('treeBody')) return
+    // refs GLB 用 "GN Instance" 做树位置（Blender 几何节点导出），treeBody.001 等是模板
+    if (o.isMesh || !o.name || o.name !== 'GN Instance') return
     // refs 世界矩阵
     o.updateWorldMatrix(true, false)
     const refMtx = o.matrixWorld.clone()

@@ -15,7 +15,7 @@
     </div>
     <!-- 加载中 -->
     <div v-if="started && loading" class="hub-loading">
-      <a-spin size="large" tip="正在建造 3D 世界…" />
+      <a-spin :size="32" tip="正在建造 3D 世界…" />
     </div>
     <!-- WebGL 不可用时的回退 -->
     <div v-if="fallback" class="hub-fallback">
