@@ -42,6 +42,18 @@
         <a-radio value="drive">🚗 开车</a-radio>
         <a-radio value="orbit">🔭 漫游</a-radio>
       </a-radio-group>
+      <!-- 车漆切换（原站 VisualVehicle 6 种车漆） -->
+      <a-dropdown v-if="started && !loading" @select="onPaintSelect">
+        <a-button size="small" shape="round">🎨 {{ paintName }}</a-button>
+        <template #content>
+          <a-doption value="red">❤️ 红色</a-doption>
+          <a-doption value="orange">🧡 橙色</a-doption>
+          <a-doption value="white">🤍 白色</a-doption>
+          <a-doption value="black">🖤 黑色</a-doption>
+          <a-doption value="flames">🔥 火焰</a-doption>
+          <a-doption value="abyssal">🌌 深渊</a-doption>
+        </template>
+      </a-dropdown>
       <div class="hub-user">
         <a-tag color="gold">{{ today }}</a-tag>
         <a-button size="small" shape="circle" :title="muted ? '取消静音' : '静音'" @click="onToggleMute">
@@ -126,6 +138,15 @@ const joyBase = ref(null)
 const joyStyle = ref({})
 let hub = null
 let joyId = null
+
+// 车漆（原站 6 种）
+const paintName = ref('红色')
+const PAINT_NAMES = { red: '红色', orange: '橙色', white: '白色', black: '黑色', flames: '火焰', abyssal: '深渊' }
+function onPaintSelect(v) {
+  if (hub && hub.setPaint(v)) {
+    paintName.value = PAINT_NAMES[v] || v
+  }
+}
 
 const today = computed(() => fmtDateLocal(new Date()))
 const visibleModules = computed(() => MODULES.filter((m) => hasPerm(m.perm)))

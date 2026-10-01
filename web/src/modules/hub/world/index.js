@@ -519,6 +519,7 @@ export async function createHub(container, hooks = {}) {
     setMode,
     getMode: () => mode,
     respawn: () => car.respawn(),
+    setPaint: (name) => car.setPaint(name),
     input, // 摇杆写入 joyThrottle / joySteer
     destroy() {
       destroyed = true
