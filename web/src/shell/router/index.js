@@ -25,7 +25,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
-    { path: '/', name: 'hub', component: HubView },
+    { path: '/', name: 'hub', component: HubView, meta: { public: true } },
     { path: '/market', name: 'home', component: HomeView, meta: { perm: 'market:view' } },
     { path: '/search', name: 'search', component: SearchView, meta: { perm: 'quotes:view' } },
     { path: '/chart/:market/:symbol', name: 'chart', component: ChartView, props: true, meta: { perm: 'quotes:view' } },
@@ -50,9 +50,12 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   if (!authState.loaded) await loadUser()
-  // 已登录访问 /login → 回首页
-  if (to.name === 'login') {
-    return authState.user ? '/' : true
+  // 公开路由（登录页、3D 首页）直接放行
+  if (to.meta?.public) {
+    if (to.name === 'login' && authState.user) {
+      return typeof to.query.next === 'string' ? to.query.next : '/'
+    }
+    return true
   }
   // 未登录 → 登录页
   if (!authState.user) {

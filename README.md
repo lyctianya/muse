@@ -27,7 +27,9 @@
 │   └── scheduler.py          # 调度器入口
 ├── api/                      # FastAPI 查询接口 + 前端托管
 ├── web/                      # Vue 3 + Vite + Arco Design + ECharts 前端
-│   └── src/views/CompanyView.vue  # A股公司详情页（基本面/MACD）
+│   ├── public/folio/         # Folio 3D 静态资源（体积大；Docker/CI 需足够磁盘）
+│   └── src/modules/folio/    # Bruno folio 引擎（公开首页 `/`）
+│       └── …/HubView.vue     # 挂载 Folio；业务路由仍走登录与权限
 ├── merger/                   # 用户侧独立合并工具
 ├── scripts/                  # 本机工具（如全量 Parquet 导入）
 ├── sql/schema.sql            # 建表语句（行情）
@@ -130,7 +132,12 @@ npm install
 cd ..
 ```
 
-安装 `package.json` 中的 Vue 3、Vite、Arco Design、ECharts 等。
+安装 `package.json` 中的 Vue 3、Vite 7、Arco Design、Three（钉死 `0.183.2`，与 Folio TSL 对齐）、Rapier 等。
+`web/.npmrc` 已启用 `legacy-peer-deps`（`vite-plugin-node-polyfills` peer 范围与 Vite 7/8 不完全一致）。
+
+公开首页 `/` 为 Folio 3D 世界（无需登录）；进入 `/market` 等业务路由时再鉴权。
+环境变量见 `web/.env.example`（`VITE_COMPRESSED`、`VITE_FORCE_WEBGL` 等）。
+静态资源在 `web/public/folio/`（含 Draco/Basis/模型/音效），体积较大，clone/Docker 构建请预留磁盘与内存。
 
 可选：构建静态产物，供后端同端口托管：
 
@@ -138,6 +145,7 @@ cd ..
 cd web && npm run build && cd ..
 ```
 
+Docker 镜像构建（`api/Dockerfile`）会执行 `npm run build` 并打包 `public/folio`；若 OOM，请加大构建机内存。
 **5) 安装结果自检（可选）**
 
 ```bash

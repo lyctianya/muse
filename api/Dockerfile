@@ -2,9 +2,10 @@
 # 构建上下文为项目根（stock-data/），供 docker-compose 调用
 
 # ---- 阶段1：构建前端 ----
+# 注意：web/public/folio 体积很大，构建机需足够磁盘与内存（npm run build）
 FROM node:24-slim AS webbuild
 WORKDIR /build
-COPY web/package.json web/package-lock.json* ./
+COPY web/package.json web/package-lock.json* web/.npmrc ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
