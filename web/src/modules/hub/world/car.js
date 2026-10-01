@@ -5,6 +5,72 @@ import { honkTexture } from './textures.js'
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 
+/* 车漆：原站 VisualVehicle.setPaints 6 种（红/橙/白/黑/火焰/深渊）
+   渐变用纵向 Canvas 纹理，火焰/深渊用简化 Shader */
+function createPaints(THREE) {
+  const paints = {}
+  const grad = (name, cA, cB) => {
+    const cv = document.createElement('canvas')
+    cv.width = 1; cv.height = 64
+    const ctx = cv.getContext('2d')
+    const g = ctx.createLinearGradient(0, 0, 0, 64)
+    g.addColorStop(0, cA); g.addColorStop(1, cB)
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 1, 64)
+    const tex = new THREE.CanvasTexture(cv)
+    tex.colorSpace = THREE.SRGBColorSpace
+    const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.35, metalness: 0.1 })
+    paints[name] = m
+    return m
+  }
+  grad('red', '#ff3a3a', '#721551')
+  grad('orange', '#ff940d', '#af0071')
+  grad('white', '#ffffff', '#b5b5b5')
+  grad('black', '#626262', '#262526')
+  // 火焰：橙红噪声动画（简化版）
+  const flameMat = new THREE.ShaderMaterial({
+    uniforms: { time: { value: 0 } },
+    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      uniform float time; varying vec2 vUv;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float noise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+        return mix(mix(hash(i), hash(i+vec2(1,0)), f.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y); }
+      void main() {
+        vec2 uv = vUv * vec2(3.0, 1.5);
+        uv.y += time * 0.8;
+        float n = noise(uv) * 0.6 + noise(uv*2.3) * 0.4;
+        float flame = smoothstep(0.3, 0.9, n + (1.0 - vUv.y) * 0.4);
+        vec3 col = mix(vec3(1.0, 0.61, 0.13), vec3(1.0, 0.0, 0.0), vUv.y);
+        col = mix(vec3(0.4, 0.05, 0.2), col, flame);
+        // 发光
+        col *= 1.0 + flame * 2.0;
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  })
+  paints.flames = flameMat
+  // 深渊：深蓝紫 + 菲涅尔（简化版）
+  const abyssMat = new THREE.ShaderMaterial({
+    uniforms: { time: { value: 0 } },
+    vertexShader: `varying vec3 vN; varying vec3 vV; varying vec2 vUv;
+      void main() { vUv = uv; vN = normalize(normalMatrix * normal);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `
+      uniform float time; varying vec3 vN; varying vec3 vV; varying vec2 vUv;
+      void main() {
+        float fres = pow(1.0 - abs(dot(vN, vV)), 2.0);
+        vec3 col = mix(vec3(0.05, 0.03, 0.15), vec3(0.38, 0.33, 1.0), fres);
+        // 星点
+        vec2 sp = floor(vUv * 40.0);
+        float star = step(0.97, fract(sin(dot(sp, vec2(12.9898,78.233))) * 43758.5453));
+        col += vec3(1.0) * star * 0.8;
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  })
+  paints.abyssal = abyssMat
+  return paints
+}
+
 /* 原站模型：车头朝 +X，单个 wheelContainer 模板需克隆出 4 个轮子 */
 export async function buildJeep() {
   const THREE = await import('three')
@@ -79,7 +145,24 @@ export async function buildJeep() {
   // 能量格初始位置（用于加速动画）
   const cellBaseY = cells.map((c) => c.position.y)
 
-  return { carrier, tilt, wheels, bubble, blinkerLeft, blinkerRight, stopLights, backLights, cells, cellBaseY }
+  // 车漆系统（原站 VisualVehicle.setPaints）
+  const paints = createPaints(THREE)
+  const bodyPainted = findPart(/^bodyPainted/i)
+  // 收集所有 wheelPainted（4 个轮子的轮毂）
+  const wheelPainteds = []
+  align.traverse((o) => { if (/^wheelPainted/i.test(o.name || '')) wheelPainteds.push(o) })
+  let currentPaint = 'red'
+  const setPaint = (name) => {
+    if (!paints[name]) return false
+    currentPaint = name
+    const mat = paints[name]
+    if (bodyPainted) bodyPainted.material = mat
+    for (const wp of wheelPainteds) wp.material = mat
+    return true
+  }
+  setPaint('red')
+
+  return { carrier, tilt, wheels, bubble, blinkerLeft, blinkerRight, stopLights, backLights, cells, cellBaseY, paints, setPaint, getPaint: () => currentPaint }
 }
 
 /* 街机手感：速度/转向直接驱动，碰撞交给 Rapier
@@ -170,6 +253,14 @@ export function createCar(RAPIER, world, parts, spawn = { x: 0, y: 0.6, z: 11, y
     if (parts.blinkerRight) parts.blinkerRight.visible = input.steer > 0.1 && blinkOn
     if (parts.stopLights) parts.stopLights.visible = !!input.brake
     if (parts.backLights) parts.backLights.visible = S.speed < -0.5
+    // 车漆 shader 时间更新（火焰/深渊动画）
+    if (parts.paints) {
+      for (const k of ['flames', 'abyssal']) {
+        if (parts.paints[k] && parts.paints[k].uniforms) {
+          parts.paints[k].uniforms.time.value = t
+        }
+      }
+    }
     // 能量格：加速时上下浮动（原站 setBoostAnimation）
     if (parts.cells && parts.cells.length) {
       const boost = input.boost ? 1 : 0
@@ -199,5 +290,53 @@ export function createCar(RAPIER, world, parts, spawn = { x: 0, y: 0.6, z: 11, y
     get pos() { return body.translation() },
     get yaw() { return S.yaw },
     get speed() { return S.speed },
+    setPaint: parts.setPaint,
+    getPaint: parts.getPaint,
+  }
+}
+
+/* 轮胎印：原站 Track 简化版 —— 车轮位置留下渐隐深色印记 */
+export function createTireTracks(THREE, scene, maxTracks = 200) {
+  const geo = new THREE.PlaneGeometry(0.28, 0.7)
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x1a1a1a, transparent: true, opacity: 0.5,
+    depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1,
+  })
+  const tracks = []
+  let idx = 0
+  // 预分配
+  const meshes = []
+  for (let i = 0; i < maxTracks; i++) {
+    const m = new THREE.Mesh(geo, mat.clone())
+    m.rotation.x = -Math.PI / 2
+    m.visible = false
+    m.renderOrder = 1
+    scene.add(m)
+    meshes.push(m)
+  }
+  return {
+    // 在世界坐标 (x, z) 留印，yaw 为车朝向
+    add(x, z, yaw, groundY = 0.02) {
+      const m = meshes[idx]
+      idx = (idx + 1) % maxTracks
+      m.position.set(x, groundY, z)
+      m.rotation.z = -yaw
+      m.material.opacity = 0.5
+      m.visible = true
+      tracks.push({ mesh: m, life: 1 })
+      if (tracks.length > maxTracks) tracks.shift()
+    },
+    update(dt) {
+      for (let i = tracks.length - 1; i >= 0; i--) {
+        const t = tracks[i]
+        t.life -= dt / 8 // 8 秒渐隐
+        if (t.life <= 0) {
+          t.mesh.visible = false
+          tracks.splice(i, 1)
+        } else {
+          t.mesh.material.opacity = 0.5 * t.life
+        }
+      }
+    },
   }
 }

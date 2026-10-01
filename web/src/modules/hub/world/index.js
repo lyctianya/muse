@@ -1,7 +1,7 @@
 /* 3D 菜单世界：场景装配 + 轨道镜头 + 点击导航 */
 import { PALETTE, MODULE_STYLE } from './palette.js'
 import { makeLabel } from './labels.js'
-import { buildJeep, createCar } from './car.js'
+import { buildJeep, createCar, createTireTracks } from './car.js'
 import { loadBrunoWorld, BUILDING_POS, WORLD_SPAWN, loadHeightGrid, groundHeightAt } from './brunoWorld.js'
 import { createParticles } from './particles.js'
 import { initAudio, engineUpdate, honk as honkSound, ding, boing, thud } from './audio.js'
@@ -166,6 +166,9 @@ export async function createHub(container, hooks = {}) {
   scene.add(jeep.carrier)
   const spawnY = groundHeightAt(WORLD_SPAWN.x, WORLD_SPAWN.z) + 0.7
   const car = createCar(RAPIER, phys, jeep, { x: WORLD_SPAWN.x, y: spawnY, z: WORLD_SPAWN.z, yaw: WORLD_SPAWN.yaw })
+  // 轮胎印（原站 Track）
+  const tireTracks = createTireTracks(THREE, scene)
+  let trackTimer = 0
   let chaseDist = 10.5
   { // 开车模式初始机位
     const p = car.pos, yaw = car.yaw
@@ -408,6 +411,20 @@ export async function createHub(container, hooks = {}) {
       let n = 0, ev = null
       while (acc >= STEP && n < 4) { ev = car.step(STEP, input); phys.step(); acc -= STEP; n++ }
       const cp = car.pos
+      // 轮胎印：速度够快时在后轮位置留印
+      trackTimer += dt
+      if (Math.abs(car.speed) > 3 && trackTimer > 0.08) {
+        trackTimer = 0
+        const yaw = car.yaw
+        const fx = Math.sin(yaw), fz = Math.cos(yaw)
+        // 后轮位置（车尾两侧）
+        const bx = cp.x - fx * 1.2, bz = cp.z - fz * 1.2
+        const px = Math.cos(yaw) * 0.9, pz = -Math.sin(yaw) * 0.9
+        const gy = groundHeightAt(bx, bz) + 0.02
+        tireTracks.add(bx + px, bz + pz, yaw, gy)
+        tireTracks.add(bx - px, bz - pz, yaw, gy)
+      }
+      tireTracks.update(dt)
       if (ev) {
         if (ev.jumped) { boing(); tracker.unlock('first_jump') }
         if (ev.landed) { thud(); particles.burst(cp.x, 0.3, cp.z, 8) }
@@ -430,6 +447,23 @@ export async function createHub(container, hooks = {}) {
           cp.x - fx * 1.7 + (Math.random() - 0.5), 0.35, cp.z - fz * 1.7 + (Math.random() - 0.5),
           { vx: -fx * 2, vy: 1.2 + Math.random(), vz: -fz * 2, life: 0.7, size: drift ? 1.1 : 0.75 }
         )
+      }
+      // 加速尾迹（原站 Boost）：boost 时在车尾喷蓝色火焰粒子
+      if (input.boost && spd > 5) {
+        const yaw = car.yaw
+        const fx = Math.sin(yaw), fz = Math.cos(yaw)
+        for (let i = 0; i < 2; i++) {
+          particles.spawn(
+            cp.x - fx * 1.9 + (Math.random() - 0.5) * 0.6, 0.6, cp.z - fz * 1.9 + (Math.random() - 0.5) * 0.6,
+            {
+              vx: -fx * 8 + (Math.random() - 0.5) * 2,
+              vy: 0.5 + Math.random() * 1.5,
+              vz: -fz * 8 + (Math.random() - 0.5) * 2,
+              life: 0.5, size: 0.9,
+              color: 0x4488ff, // 蓝色火焰
+            }
+          )
+        }
       }
       checkZone()
       engineUpdate(Math.min(1, spd / 17), input.boost, true)
