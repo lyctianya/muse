@@ -134,18 +134,15 @@ export async function createHub(container, hooks = {}) {
   await RAPIER.init()
   const phys = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
   phys.timestep = 1 / 60
-  // 地形高度场（129x129，原站地形烘焙）
+  // 地形 trimesh 碰撞体（原站地形烘焙；heightfield 在此 rapier 版本 WASM trap，改用 trimesh）
   {
-    const hg = await loadHeightGrid()
-    const N = 129
-    const heights = new Float32Array(N * N)
-    // Rapier heightfield: heights[row * ncols + col]，这里行=z、列=x
-    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) heights[r * N + c] = hg[r * N + c]
-    const scale = new RAPIER.Vector3(192 / (N - 1), 1, 192 / (N - 1))
-    const hfDesc = RAPIER.ColliderDesc.heightfield(N, N, heights, scale)
-      .setTranslation(-96, 0, -96)
-      .setFriction(0.9)
-    phys.createCollider(hfDesc)
+    const [vb, ib] = await Promise.all([
+      fetch('/hub/world/terrain_verts.raw').then((r) => r.arrayBuffer()),
+      fetch('/hub/world/terrain_idx.raw').then((r) => r.arrayBuffer()),
+    ])
+    const verts = new Float32Array(vb)
+    const idx = new Uint32Array(ib)
+    phys.createCollider(RAPIER.ColliderDesc.trimesh(verts, idx).setFriction(0.9))
   }
   // 建筑碰撞体（近似盒）
   for (const m of modules) {
