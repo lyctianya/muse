@@ -31,17 +31,17 @@ export async function buildJeep() {
   for (const [sx, sz, front] of defs) {
     const steer = new THREE.Group()
     steer.position.set(sx, WHEEL_Y, sz)
+    // 转动件：wheel.006 / wheelPainted（转轴为模型 Z 向）
+    const spinMeshes = []
     if (wheelTemplate) {
       const wc = wheelTemplate.clone(true)
       wc.position.set(0, 0, 0)
       steer.add(wc)
+      wc.traverse((o) => {
+        if (o.isMesh && (o.name.startsWith('wheel.') || o.name === 'wheelPainted')) spinMeshes.push(o)
+      })
     }
     align.add(steer)
-    // 转动件：wheel.006 / wheelPainted（转轴为模型 Z 向）
-    const spinMeshes = []
-    wc.traverse((o) => {
-      if (o.isMesh && (o.name.startsWith('wheel.') || o.name === 'wheelPainted')) spinMeshes.push(o)
-    })
     wheels.push({ steer, spinMeshes, front })
   }
 
