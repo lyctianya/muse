@@ -61,7 +61,25 @@ export async function buildJeep() {
   bubble.visible = false
   carrier.add(bubble)
 
-  return { carrier, tilt, wheels, bubble }
+  // 车灯/能量格（原站 VisualVehicle.setBlinkers/setBackLights/setBoostAnimation）
+  const findPart = (re) => {
+    let found = null
+    align.traverse((o) => { if (!found && re.test(o.name || '')) found = o })
+    return found
+  }
+  const blinkerLeft = findPart(/^blinkerLeft/i)
+  const blinkerRight = findPart(/^blinkerRight/i)
+  const stopLights = findPart(/^stopLights/i)
+  const backLights = findPart(/^backLights/i)
+  const cells = [findPart(/^cell1/i), findPart(/^cell2/i), findPart(/^cell3/i)].filter(Boolean)
+  if (blinkerLeft) blinkerLeft.visible = false
+  if (blinkerRight) blinkerRight.visible = false
+  if (stopLights) stopLights.visible = false
+  if (backLights) backLights.visible = false
+  // 能量格初始位置（用于加速动画）
+  const cellBaseY = cells.map((c) => c.position.y)
+
+  return { carrier, tilt, wheels, bubble, blinkerLeft, blinkerRight, stopLights, backLights, cells, cellBaseY }
 }
 
 /* 街机手感：速度/转向直接驱动，碰撞交给 Rapier
@@ -144,6 +162,20 @@ export function createCar(RAPIER, world, parts, spawn = { x: 0, y: 0.6, z: 11, y
       // 镜像轮（+z 侧）转轴反向，需反转自转方向（照原站 VisualVehicle.update）
       const dir = w.mirror ? 1 : -1
       for (const m of w.spinMeshes) m.rotation.z += dir * (S.speed * dt) / 0.43
+    }
+    // 车灯：转向灯闪烁 / 刹车灯 / 倒车灯（原站 VisualVehicle）
+    const t = performance.now() / 1000
+    const blinkOn = Math.sin(t * 10) > 0
+    if (parts.blinkerLeft) parts.blinkerLeft.visible = input.steer < -0.1 && blinkOn
+    if (parts.blinkerRight) parts.blinkerRight.visible = input.steer > 0.1 && blinkOn
+    if (parts.stopLights) parts.stopLights.visible = !!input.brake
+    if (parts.backLights) parts.backLights.visible = S.speed < -0.5
+    // 能量格：加速时上下浮动（原站 setBoostAnimation）
+    if (parts.cells && parts.cells.length) {
+      const boost = input.boost ? 1 : 0
+      parts.cells.forEach((c, i) => {
+        c.position.y = parts.cellBaseY[i] + Math.sin(t * 8 + i * 2.1) * 0.08 * boost
+      })
     }
     // 悬挂起伏 + 加速/转向倾斜
     S.bounce += dt * (5 + Math.abs(S.speed) * 1.4)

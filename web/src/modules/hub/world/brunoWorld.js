@@ -2,6 +2,7 @@
    地形 / 全部建筑 / 布景 / 树木 / 灌木 / 花 —— 坐标均为原站烘焙 */
 import * as THREE from 'three'
 import { loadGLB } from './brunoAssets.js'
+import { createFoliage } from './foliage.js'
 
 /* 8 模块 → 原站建筑位置（x, z，来自 areas.glb 烘焙坐标） */
 export const BUILDING_POS = {
@@ -40,43 +41,61 @@ export function groundHeightAt(x, z) {
 }
 
 /* 按 refs 摆 visual 模板；matFor(name) 可覆盖材质（调色板 UV 在 Draco 下不稳定时用纯色） */
-async function instanceFromRefs(scene, visualPath, refsPath, namePrefix, matFor = null) {
+
+/* 树木：照原站 Trees.js
+   - 树干：InstancedMesh（body 几何 + refs 矩阵，一次绘制）
+   - 树叶：程序化 Foliage（80 平面球形排布 + alpha 纹理 + colorA/B 渐变）
+   - 返回 { count, positions }（positions 用于碰撞体） */
+async function plantTrees(scene, visualPath, refsPath, trunkColor, leafA, leafB) {
   const visual = await loadGLB(visualPath)
   const refs = await loadGLB(refsPath)
+  // 找 treeBody 和 treeLeaves
+  let bodyMesh = null
+  const leavesMeshes = []
+  visual.traverse((o) => {
+    if (!o.isMesh) return
+    const n = (o.name || '').toLowerCase()
+    if (n.startsWith('treeleaves')) leavesMeshes.push(o)
+    else if (n.startsWith('treebody')) bodyMesh = o
+  })
   const positions = []
+  const bodyMatrices = []
+  const leafMatrices = []
+  const m4 = new THREE.Matrix4()
   refs.traverse((o) => {
-    if (!o.isMesh && o.name && o.name.startsWith(namePrefix)) {
-      const inst = visual.clone(true)
-      if (matFor) {
-        inst.traverse((m) => {
-          if (m.isMesh) {
-            const mat = matFor(m.name)
-            if (mat) m.material = mat
-          }
-        })
-      }
-      inst.position.copy(o.position)
-      inst.quaternion.copy(o.quaternion)
-      inst.scale.copy(o.scale)
-      scene.add(inst)
-      positions.push(o.position.clone())
+    if (o.isMesh || !o.name || !o.name.startsWith('treeBody')) return
+    // refs 世界矩阵
+    o.updateWorldMatrix(true, false)
+    const refMtx = o.matrixWorld.clone()
+    positions.push(new THREE.Vector3().setFromMatrixPosition(refMtx))
+    if (bodyMesh) {
+      bodyMatrices.push(refMtx)
+    }
+    // 每片树叶：leaves.matrix × ref.matrixWorld（原站 Trees.setLeaves）
+    for (const lm of leavesMeshes) {
+      lm.updateWorldMatrix(true, false)
+      // leaves 在 visual 内的本地矩阵 × ref 世界矩阵
+      // 注意 visual 未加入场景，需手动算：visual.matrixWorld 是单位阵
+      const leafLocal = lm.matrix.clone()
+      const final = new THREE.Matrix4().multiplyMatrices(refMtx, leafLocal)
+      leafMatrices.push(final)
     }
   })
-  // refs 自身不加入场景（只用它做 placement）
-  return { count: positions.length, positions }
-}
-
-/* 树的纯色材质（按名称区分树干/树叶） */
-function treeMaterials(trunkColor, leafColor) {
-  const trunk = new THREE.MeshStandardMaterial({ color: trunkColor, roughness: 0.9 })
-  const leaf = new THREE.MeshStandardMaterial({ color: leafColor, roughness: 0.9 })
-  return (name) => {
-    if (!name) return null
-    const n = name.toLowerCase()
-    if (n.includes('body') || n.includes('trunk')) return trunk
-    if (n.includes('leav')) return leaf
-    return null
+  // 树干实例化
+  if (bodyMesh && bodyMatrices.length) {
+    const trunkMat = new THREE.MeshStandardMaterial({ color: trunkColor, roughness: 0.9 })
+    const inst = new THREE.InstancedMesh(bodyMesh.geometry, trunkMat, bodyMatrices.length)
+    bodyMatrices.forEach((mtx, i) => inst.setMatrixAt(i, mtx))
+    inst.instanceMatrix.needsUpdate = true
+    inst.castShadow = true
+    inst.receiveShadow = true
+    scene.add(inst)
   }
+  // 树叶程序化
+  if (leafMatrices.length) {
+    await createFoliage(scene, leafMatrices, leafA, leafB)
+  }
+  return { count: positions.length, positions }
 }
 
 export async function loadBrunoWorld(scene) {
@@ -148,20 +167,28 @@ export async function loadBrunoWorld(scene) {
   const scenery = await loadGLB('/hub/world/scenery.glb')
   scene.add(scenery)
 
-  // 树木：原站 Trees 传入 colorA/colorB（非调色板），纯色 1:1 还原
+  // 树木：原站 Trees 传入 colorA/colorB（非调色板）
   // 白桦 #ff4f2b/#ff903f（橙），橡树 #b4b536/#d8cf3b（橄榄绿），樱桃 #ff6d6d/#ff9990（粉）
-  const nb = await instanceFromRefs(scene, '/hub/world/birchVisual.glb', '/hub/world/birchRefs.glb', 'treeBody',
-    treeMaterials(0xe8e0d0, 0xff6a35))
-  const no = await instanceFromRefs(scene, '/hub/world/oakVisual.glb', '/hub/world/oakRefs.glb', 'treeBody',
-    treeMaterials(0x8b5a2b, 0xc4c43a))
-  const nc = await instanceFromRefs(scene, '/hub/world/cherryVisual.glb', '/hub/world/cherryRefs.glb', 'treeBody',
-    treeMaterials(0x8b5a2b, 0xff7d7d))
+  const nb = await plantTrees(scene, '/hub/world/birchVisual.glb', '/hub/world/birchRefs.glb',
+    0xe8e0d0, '#ff4f2b', '#ff903f')
+  const no = await plantTrees(scene, '/hub/world/oakVisual.glb', '/hub/world/oakRefs.glb',
+    0x8b5a2b, '#b4b536', '#d8cf3b')
+  const nc = await plantTrees(scene, '/hub/world/cherryVisual.glb', '/hub/world/cherryRefs.glb',
+    0x8b5a2b, '#ff6d6d', '#ff9990')
 
-  // 灌木：原站 Bushes 用 #b4b536/#d8cf3b（橄榄绿，和橡树同色）
-  const bushes = await loadGLB('/hub/world/bushesRefs.glb')
-  const bushMat = new THREE.MeshStandardMaterial({ color: 0xc4c43a, roughness: 0.9 })
-  bushes.traverse((o) => { if (o.isMesh) o.material = bushMat })
-  scene.add(bushes)
+  // 灌木：原站 Bushes = Foliage（#b4b536/#d8cf3b 橄榄绿）
+  {
+    const bushRefs = await loadGLB('/hub/world/bushesRefs.glb')
+    const bushMatrices = []
+    bushRefs.traverse((o) => {
+      if (o.isMesh) return
+      o.updateWorldMatrix(true, false)
+      bushMatrices.push(o.matrixWorld.clone())
+    })
+    if (bushMatrices.length) {
+      await createFoliage(scene, bushMatrices, '#b4b536', '#d8cf3b')
+    }
+  }
   scene.add(await loadGLB('/hub/world/flowersRefs.glb'))
 
   const treePositions = [...nb.positions, ...no.positions, ...nc.positions]
