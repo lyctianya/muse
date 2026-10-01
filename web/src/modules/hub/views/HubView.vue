@@ -20,7 +20,8 @@
     <!-- WebGL 不可用时的回退 -->
     <div v-if="fallback" class="hub-fallback">
       <a-card title="3D 菜单不可用" style="width: 420px">
-        <p style="color: #86909c">当前浏览器不支持 WebGL，请使用下面的列表进入各模块：</p>
+        <p v-if="fallbackReason === 'webgl'" style="color: #86909c">当前浏览器不支持 WebGL2，请使用下面的列表进入各模块：</p>
+        <p v-else style="color: #86909c">3D 初始化失败（{{ fallbackReason }}），请使用下面的列表进入各模块：</p>
         <a-list :data="visibleModules" :bordered="false">
           <a-list-item v-for="m in visibleModules" :key="m.id" @click="$router.push(m.route)" style="cursor: pointer">
             {{ m.title }}<template #actions><a-link>进入</a-link></template>
@@ -115,6 +116,7 @@ const stage = ref(null)
 const started = ref(false)
 const loading = ref(false)
 const fallback = ref(false)
+const fallbackReason = ref('')
 const selected = ref(null)
 const mode = ref('drive')
 const toasts = ref([])
@@ -194,6 +196,16 @@ async function startWorld() {
   started.value = true
   loading.value = true
   initAudio() // 用户手势内初始化音频
+  // 先做真正的 WebGL2 能力探测，避免把其他失败误报成 WebGL 问题
+  try {
+    const probe = document.createElement('canvas')
+    if (!probe.getContext('webgl2')) {
+      fallback.value = true
+      fallbackReason.value = 'webgl'
+      loading.value = false
+      return
+    }
+  } catch (e) { /* 忽略探测异常，交给 createHub 处理 */ }
   try {
     hub = await createHub(stage.value, {
       modules: visibleModules.value,
@@ -210,6 +222,7 @@ async function startWorld() {
   } catch (e) {
     console.error('3D 初始化失败', e)
     fallback.value = true
+    fallbackReason.value = (e && e.message) ? e.message : String(e)
   } finally {
     loading.value = false
   }
