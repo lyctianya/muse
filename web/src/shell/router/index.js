@@ -18,13 +18,15 @@ import GalleryView from '../../modules/gallery/views/GalleryView.vue'
 import AlbumView from '../../modules/gallery/views/AlbumView.vue'
 import GameView from '../../modules/game/views/GameView.vue'
 import ToolsView from '../../modules/tools/views/ToolsView.vue'
+import HubView from '../../modules/hub/views/HubView.vue'
 import { authState, hasPerm, loadUser } from '../../platform/utils/auth.js'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
-    { path: '/', name: 'home', component: HomeView, meta: { perm: 'market:view' } },
+    { path: '/', name: 'hub', component: HubView },
+    { path: '/market', name: 'home', component: HomeView, meta: { perm: 'market:view' } },
     { path: '/search', name: 'search', component: SearchView, meta: { perm: 'quotes:view' } },
     { path: '/chart/:market/:symbol', name: 'chart', component: ChartView, props: true, meta: { perm: 'quotes:view' } },
     { path: '/company/:symbol', name: 'company', component: CompanyView, props: true, meta: { perm: 'quotes:view' } },
@@ -56,10 +58,10 @@ router.beforeEach(async (to) => {
   if (!authState.user) {
     return { path: '/login', query: { next: to.fullPath } }
   }
-  // 无权限 → 首页（首页总是有 market:view 兜底；若连首页权限都没有则留空）
+  // 无权限 → 3D 菜单（所有登录用户可进）
   const perm = to.meta?.perm
   if (perm && !hasPerm(perm)) {
-    return hasPerm('market:view') ? '/' : true
+    return '/'
   }
   return true
 })
