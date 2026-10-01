@@ -526,7 +526,8 @@ export async function createHub(container, hooks = {}) {
     grass.update(t)
     water.update(t)
     // 天气跟随车辆
-    weather.setCenter(cp.x, cp.z)
+    const carPos = car.pos
+    weather.setCenter(carPos.x, carPos.z)
     weather.update(dt)
     // 云漂移
     for (const c of clouds) {
