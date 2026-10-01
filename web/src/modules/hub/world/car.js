@@ -1,97 +1,61 @@
-/* 玩具吉普：外观（代码建模） + Rapier 街机物理控制器 */
-import { PALETTE } from './palette.js'
+/* 吉普车：bruno-simon.com 原站模型（MIT，见 /hub/ATTRIBUTION.md）
+   + Rapier 街机物理控制器 */
+import { loadJeep } from './brunoAssets.js'
 import { honkTexture } from './textures.js'
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 
+/* 原站模型：车头朝 +X，单个 wheelContainer 模板需克隆出 4 个轮子 */
 export async function buildJeep() {
   const THREE = await import('three')
-  const mat = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7, metalness: 0.1, ...o })
-  const box = (w, h, d, c, x = 0, y = 0, z = 0, o = {}) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c, o))
-    m.position.set(x, y, z)
-    m.castShadow = true
-    return m
-  }
+  const { root, wheelTemplate } = await loadJeep()
 
-  const carrier = new THREE.Group() // 位置 + 朝向
-  const tilt = new THREE.Group()     // 加速/转向倾斜 + 悬挂
+  const carrier = new THREE.Group() // 位置 + 朝向（+Z 为前）
+  const tilt = new THREE.Group()     // 悬挂/倾斜
+  const align = new THREE.Group()    // 模型空间 → 世界：转朝向 + 落地
+  align.rotation.y = -Math.PI / 2    // +X → +Z
   carrier.add(tilt)
+  tilt.add(align)
+  for (const child of [...root.children]) align.add(child)
 
-  tilt.add(box(1.7, 0.45, 2.9, PALETTE.red, 0, 0.72, 0))            // 车身
-  tilt.add(box(1.74, 0.16, 0.5, PALETTE.redDark, 0, 0.6, 1.45))     // 前杠
-  tilt.add(box(1.5, 0.62, 1.35, PALETTE.white, 0, 1.22, -0.35))    // 座舱
-  const shield = box(1.34, 0.42, 0.07, PALETTE.glass, 0, 1.28, 0.36, { roughness: 0.15, metalness: 0.3 })
-  shield.rotation.x = -0.18
-  tilt.add(shield)                                                  // 风挡
-  tilt.add(box(0.5, 0.5, 0.5, PALETTE.dark, -0.4, 1.08, -0.4))     // 座椅
-  tilt.add(box(0.5, 0.5, 0.5, PALETTE.dark, 0.4, 1.08, -0.4))
-
-  // 司机
-  tilt.add(box(0.52, 0.55, 0.38, PALETTE.teal, 0.4, 1.62, -0.4))  // 躯干
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 12, 12), mat(0xffd9b3))
-  head.position.set(0.4, 2.05, -0.4)
-  head.castShadow = true
-  tilt.add(head)
-  tilt.add(box(0.5, 0.1, 0.5, PALETTE.gold, 0.4, 2.22, -0.4))      // 帽子
-  tilt.add(box(0.62, 0.05, 0.2, PALETTE.gold, 0.4, 2.18, -0.12))   // 帽檐
-  const armL = box(0.14, 0.14, 0.55, PALETTE.teal, 0.4, 1.72, 0.05)
-  armL.rotation.x = -0.5
-  tilt.add(armL)                                                    // 手搭方向盘
-  const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.05, 8, 16), mat(PALETTE.dark))
-  wheel.position.set(0.4, 1.62, 0.28)
-  wheel.rotation.x = -0.9
-  tilt.add(wheel)
-
-  for (const sx of [-0.55, 0.55]) {                                // 车灯
-    const lamp = new THREE.Mesh(
-      new THREE.SphereGeometry(0.13, 10, 10),
-      new THREE.MeshBasicMaterial({ color: 0xfff4c2 })
-    )
-    lamp.position.set(sx, 0.85, 1.47)
-    tilt.add(lamp)
-  }
-  // 备胎
-  const spare = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.15, 8, 18), mat(0x1a1a1a, { roughness: 0.95 }))
-  spare.position.set(0, 0.95, -1.52)
-  spare.castShadow = true
-  tilt.add(spare)
-  // 排气管
-  const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.5, 8), mat(0x8a8f98, { metalness: 0.6, roughness: 0.35 }))
-  exhaust.rotation.x = Math.PI / 2
-  exhaust.position.set(-0.6, 0.45, -1.6)
-  tilt.add(exhaust)
-
-  // 轮子：steer(转向) > spin(滚动) > 网格
+  // 4 个轮子：前轮 x=+0.87（模型空间）
+  const WHEEL_X = 0.87, WHEEL_Y = -0.42, WHEEL_Z = 0.70
   const wheels = []
-  const wheelGeo = new THREE.CylinderGeometry(0.44, 0.44, 0.36, 14)
-  const hubGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.38, 10)
+  if (!wheelTemplate) console.warn('[hub] wheelContainer 模板未找到，轮子将缺失')
+  // 移除原模板（后面用克隆重建 4 个）
+  if (wheelTemplate && wheelTemplate.parent) wheelTemplate.parent.remove(wheelTemplate)
   const defs = [
-    [-0.98, 1.02, true], [0.98, 1.02, true],
-    [-0.98, -1.02, false], [0.98, -1.02, false],
+    [WHEEL_X, -WHEEL_Z, true], [WHEEL_X, WHEEL_Z, true],
+    [-WHEEL_X, -WHEEL_Z, false], [-WHEEL_X, WHEEL_Z, false],
   ]
   for (const [sx, sz, front] of defs) {
     const steer = new THREE.Group()
-    steer.position.set(sx, 0.44, sz)
-    const spin = new THREE.Group()
-    const wm = new THREE.Mesh(wheelGeo, mat(0x1a1a1a, { roughness: 0.95 }))
-    wm.rotation.z = Math.PI / 2
-    wm.castShadow = true
-    const hub = new THREE.Mesh(hubGeo, mat(0xf2f2f2, { roughness: 0.4 }))
-    hub.rotation.z = Math.PI / 2
-    spin.add(wm); spin.add(hub)
-    steer.add(spin); tilt.add(steer)
-    // 挡泥板
-    tilt.add(box(0.56, 0.1, 1.05, PALETTE.redDark, sx, 0.98, sz))
-    wheels.push({ steer, spin, front })
+    steer.position.set(sx, WHEEL_Y, sz)
+    if (wheelTemplate) {
+      const wc = wheelTemplate.clone(true)
+      wc.position.set(0, 0, 0)
+      steer.add(wc)
+    }
+    align.add(steer)
+    // 转动件：wheel.006 / wheelPainted（转轴为模型 Z 向）
+    const spinMeshes = []
+    wc.traverse((o) => {
+      if (o.isMesh && (o.name.startsWith('wheel.') || o.name === 'wheelPainted')) spinMeshes.push(o)
+    })
+    wheels.push({ steer, spinMeshes, front })
   }
+
+  // 落地：包围盒底面对齐 y=0
+  align.updateWorldMatrix(true, true)
+  const bbox = new THREE.Box3().setFromObject(align)
+  align.position.y = -bbox.min.y
 
   // 喇叭气泡
   const bubble = new THREE.Sprite(new THREE.SpriteMaterial({
     map: await honkTexture(), transparent: true, depthWrite: false,
   }))
   bubble.scale.set(1.6, 1.2, 1)
-  bubble.position.set(0, 3.1, 0.6)
+  bubble.position.set(0, 3.4, 0.6)
   bubble.visible = false
   carrier.add(bubble)
 
@@ -108,8 +72,8 @@ export function createCar(RAPIER, world, parts) {
       .setAngularDamping(1.5)
   )
   world.createCollider(
-    RAPIER.ColliderDesc.cuboid(0.85, 0.55, 1.45)
-      .setTranslation(0, 0.75, 0)
+    RAPIER.ColliderDesc.cuboid(0.95, 0.7, 1.9)
+      .setTranslation(0, 0.8, 0)
       .setFriction(0.7)
       .setRestitution(0.05),
     body
@@ -175,7 +139,7 @@ export function createCar(RAPIER, world, parts) {
     parts.carrier.rotation.y = S.yaw
     for (const w of parts.wheels) {
       if (w.front) w.steer.rotation.y = input.steer * 0.5
-      w.spin.rotation.x += (S.speed * dt) / 0.44
+      for (const m of w.spinMeshes) m.rotation.z -= (S.speed * dt) / 0.43
     }
     // 悬挂起伏 + 加速/转向倾斜
     S.bounce += dt * (5 + Math.abs(S.speed) * 1.4)

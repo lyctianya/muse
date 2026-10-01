@@ -16,9 +16,9 @@ export async function makeLabel(text, accent = '#d3a24a') {
   ctx.beginPath()
   ctx.roundRect(8, 8, W - 16, H - 16, r)
   ctx.stroke()
-  // 文字
+  // 文字（Pally 为原站字体，未加载完则回退系统字体）
   ctx.fillStyle = '#1a2340'
-  ctx.font = '700 56px "PingFang SC","Microsoft YaHei",sans-serif'
+  ctx.font = '700 56px Pally, "PingFang SC", "Microsoft YaHei", sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText(text, W / 2, H / 2 + 2)

@@ -1,63 +1,96 @@
-/* 程序化 WebAudio：引擎轰鸣 + 喇叭 + 音效，无外部音频文件 */
-let ctx = null
-let master = null
-let eng = null
+/* 原站真实音效（MIT，见 /hub/ATTRIBUTION.md）
+   engine/honk/rolling/hit 来自 bruno-simon.com，music 为 Kounine CC0 */
+let engine = null
+let rolling = null
+let music = null
+let muted = false
+let ready = false
 
+function makeAudio(src, loop = false, volume = 1) {
+  const a = new Audio(src)
+  a.loop = loop
+  a.volume = volume
+  a.preload = 'auto'
+  return a
+}
+
+/* 必须在用户手势中调用 */
 export function initAudio() {
-  if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return }
-  const AC = window.AudioContext || window.webkitAudioContext
-  if (!AC) return
-  ctx = new AC()
-  master = ctx.createGain()
-  master.gain.value = 0.35
-  master.connect(ctx.destination)
-  // 引擎：锯齿 + 方波 → 低通
-  const o1 = ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 55
-  const o2 = ctx.createOscillator(); o2.type = 'square'; o2.frequency.value = 28
-  const filt = ctx.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 320
-  const g = ctx.createGain(); g.gain.value = 0
-  o1.connect(filt); o2.connect(filt); filt.connect(g); g.connect(master)
-  o1.start(); o2.start()
-  eng = { o1, o2, g }
+  if (ready) return
+  ready = true
+  try {
+    engine = makeAudio('/hub/sounds/engine.mp3', true, 0)
+    rolling = makeAudio('/hub/sounds/rolling.mp3', true, 0)
+    music = makeAudio('/hub/sounds/music.mp3', true, 0.32)
+    // 预热播放（手势内允许）
+    engine.play().catch(() => {})
+    rolling.play().catch(() => {})
+    music.play().catch(() => {})
+  } catch (e) {
+    console.warn('音频初始化失败', e)
+  }
 }
 
+/* 每帧调用：speed01 0~1 */
 export function engineUpdate(speed01, boosting, active) {
-  if (!ctx || !eng) return
-  const t = ctx.currentTime
-  eng.o1.frequency.setTargetAtTime(55 + speed01 * 120 + (boosting ? 35 : 0), t, 0.06)
-  eng.o2.frequency.setTargetAtTime(28 + speed01 * 60, t, 0.06)
-  eng.g.gain.setTargetAtTime(active ? 0.05 + speed01 * 0.07 : 0, t, 0.12)
+  if (!ready || !engine) return
+  const on = active && !muted
+  engine.volume = on ? 0.12 + speed01 * 0.30 : 0
+  engine.playbackRate = 0.75 + speed01 * 0.9 + (boosting ? 0.25 : 0)
+  rolling.volume = on ? speed01 * 0.35 : 0
+  rolling.playbackRate = 0.8 + speed01 * 0.6
 }
 
-function blip(freqA, freqB, dur, type = 'square', vol = 0.16) {
-  if (!ctx) return
-  const t = ctx.currentTime
-  const o = ctx.createOscillator(), g = ctx.createGain()
-  o.type = type
-  o.frequency.setValueAtTime(freqA, t)
-  o.frequency.setValueAtTime(freqB, t + dur * 0.4)
-  g.gain.setValueAtTime(vol, t)
-  g.gain.exponentialRampToValueAtTime(0.001, t + dur)
-  o.connect(g); g.connect(master)
-  o.start(t); o.stop(t + dur + 0.02)
+function oneShot(src, volume = 0.5) {
+  if (!ready || muted) return
+  try {
+    const a = makeAudio(src, false, volume)
+    a.play().catch(() => {})
+  } catch (e) { /* ignore */ }
 }
 
-export function honk() { blip(540, 400, 0.28, 'square', 0.14) }
+export function honk() { oneShot('/hub/sounds/honk.mp3', 0.55) }
+export function hit() { oneShot('/hub/sounds/hit.mp3', 0.6) }
+
+/* 成就提示音：简单的合成 ding（原站无单文件，保留合成） */
+let actx = null
 export function ding() {
-  blip(880, 880, 0.35, 'sine', 0.2)
-  setTimeout(() => blip(1318, 1318, 0.45, 'sine', 0.18), 120)
+  if (!ready || muted) return
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)()
+    const t = actx.currentTime
+    for (const [f, d] of [[880, 0], [1318, 0.12]]) {
+      const o = actx.createOscillator(), g = actx.createGain()
+      o.type = 'sine'; o.frequency.value = f
+      g.gain.setValueAtTime(0.18, t + d)
+      g.gain.exponentialRampToValueAtTime(0.001, t + d + 0.4)
+      o.connect(g); g.connect(actx.destination)
+      o.start(t + d); o.stop(t + d + 0.45)
+    }
+  } catch (e) { /* ignore */ }
 }
-export function boing() { blip(220, 520, 0.25, 'sine', 0.16) }
-export function thud() {
-  if (!ctx) return
-  const t = ctx.currentTime
-  const len = Math.floor(ctx.sampleRate * 0.16)
-  const buf = ctx.createBuffer(1, len, ctx.sampleRate)
-  const d = buf.getChannelData(0)
-  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len)
-  const src = ctx.createBufferSource(); src.buffer = buf
-  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 280
-  const g = ctx.createGain(); g.gain.value = 0.5
-  src.connect(f); f.connect(g); g.connect(master)
-  src.start(t)
+
+export function boing() {
+  if (!ready || muted) return
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)()
+    const t = actx.currentTime
+    const o = actx.createOscillator(), g = actx.createGain()
+    o.type = 'sine'
+    o.frequency.setValueAtTime(220, t)
+    o.frequency.exponentialRampToValueAtTime(520, t + 0.22)
+    g.gain.setValueAtTime(0.15, t)
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28)
+    o.connect(g); g.connect(actx.destination)
+    o.start(t); o.stop(t + 0.3)
+  } catch (e) { /* ignore */ }
 }
+
+export function thud() { hit() }
+
+export function toggleMute() {
+  muted = !muted
+  if (music) music.volume = muted ? 0 : 0.32
+  return muted
+}
+export function isMuted() { return muted }

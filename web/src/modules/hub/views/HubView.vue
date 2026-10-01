@@ -10,6 +10,7 @@
           进入世界 ▶
         </a-button>
         <p class="hub-intro-keys">WASD 开车 · 空格跳跃 · H 喇叭 · Shift 加速</p>
+        <p class="hub-intro-credit">3D 素材 © 2025 Bruno Simon (MIT) · 音乐 Kounine (CC0)</p>
       </div>
     </div>
     <!-- 加载中 -->
@@ -42,6 +43,9 @@
       </a-radio-group>
       <div class="hub-user">
         <a-tag color="gold">{{ today }}</a-tag>
+        <a-button size="small" shape="circle" :title="muted ? '取消静音' : '静音'" @click="onToggleMute">
+          {{ muted ? '🔇' : '🔊' }}
+        </a-button>
         <a-dropdown v-if="authState.user" @select="onUserMenu">
           <a-button size="small">
             <template #icon><icon-user /></template>
@@ -99,7 +103,7 @@
 
 <script setup>
 import { createHub, MODULES } from '../world/index.js'
-import { initAudio } from '../world/audio.js'
+import { initAudio, toggleMute, isMuted } from '../world/audio.js'
 import { authState, hasPerm, logout, loadUser } from '../../../platform/utils/auth.js'
 import { fmtDateLocal } from '../../../platform/utils/date.js'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
@@ -114,6 +118,7 @@ const fallback = ref(false)
 const selected = ref(null)
 const mode = ref('drive')
 const toasts = ref([])
+const muted = ref(false)
 const isTouch = 'ontouchstart' in window
 const joyBase = ref(null)
 const joyStyle = ref({})
@@ -126,6 +131,10 @@ const visibleModules = computed(() => MODULES.filter((m) => hasPerm(m.perm)))
 function onModeChange(v) {
   selected.value = null
   hub && hub.setMode(v)
+}
+
+function onToggleMute() {
+  muted.value = toggleMute()
 }
 
 function onUserMenu(v) {
@@ -213,7 +222,19 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.hub { position: relative; width: 100%; height: 100vh; overflow: hidden; background: #9fd3ef; }
+@font-face {
+  font-family: 'Pally';
+  src: url('/hub/fonts/Pally-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Pally';
+  src: url('/hub/fonts/Pally-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+.hub { position: relative; width: 100%; height: 100vh; overflow: hidden; background: #9fd3ef; font-family: 'Pally', "PingFang SC", "Microsoft YaHei", sans-serif; }
 .hub-stage { position: absolute; inset: 0; }
 .hub-loading, .hub-fallback {
   position: absolute; inset: 0; z-index: 20;
@@ -261,6 +282,7 @@ onBeforeUnmount(() => {
 .hub-intro-title { font-size: 30px; font-weight: 700; color: #1a2340; margin-top: 18px; }
 .hub-intro-desc { font-size: 15px; color: #3d4a6b; margin: 10px 0 24px; }
 .hub-intro-keys { font-size: 12px; color: #5a6b7d; margin-top: 18px; }
+.hub-intro-credit { font-size: 11px; color: #8a94a6; margin-top: 8px; }
 .hub-toasts {
   position: absolute; left: 20px; bottom: 70px; z-index: 12;
   display: flex; flex-direction: column; gap: 10px;

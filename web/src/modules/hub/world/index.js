@@ -3,7 +3,7 @@ import { PALETTE, MODULE_STYLE } from './palette.js'
 import { BUILDERS } from './buildings.js'
 import { makeLabel } from './labels.js'
 import { buildJeep, createCar } from './car.js'
-import { makeRoads, makeLamps, makeNature, makeSignposts, makeLake, makeFlowerBeds } from './dressing.js'
+import { makeRoads, makeSignposts, makeLake, decorateWorld } from './dressing.js'
 import { createParticles } from './particles.js'
 import { initAudio, engineUpdate, honk as honkSound, ding, boing, thud } from './audio.js'
 import { createTracker } from './achievements.js'
@@ -87,6 +87,9 @@ export async function createHub(container, hooks = {}) {
 
   const modules = hooks.modules || MODULES
 
+  // 等原站字体就绪再画标签
+  try { await document.fonts.load('700 56px Pally') } catch (e) { /* fallback */ }
+
   // 道路（纹理柏油路 + 中央虚线）
   await makeRoads(scene, modules, RADIUS)
 
@@ -127,41 +130,6 @@ export async function createHub(container, hooks = {}) {
     pickables.push(wrap)
   }
 
-  // 树
-  const treePos = []
-  for (let i = 0; i < 16; i++) {
-    const a = Math.random() * Math.PI * 2
-    const r = 22 + Math.random() * 12
-    const x = Math.cos(a) * r, z = Math.sin(a) * r
-    const tree = new THREE.Group()
-    const trunk = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.22, 0.3, 1.2, 8),
-      new THREE.MeshStandardMaterial({ color: PALETTE.trunk, roughness: 1 })
-    )
-    trunk.position.y = 0.6
-    trunk.castShadow = true
-    tree.add(trunk)
-    const s = 0.9 + Math.random() * 0.7
-    const c1 = new THREE.Mesh(
-      new THREE.ConeGeometry(1.3 * s, 2.0 * s, 8),
-      new THREE.MeshStandardMaterial({ color: Math.random() > 0.5 ? PALETTE.leaf : PALETTE.leafDark, roughness: 1 })
-    )
-    c1.position.y = 2.0 * s
-    c1.castShadow = true
-    tree.add(c1)
-    const c2 = new THREE.Mesh(
-      new THREE.ConeGeometry(0.95 * s, 1.5 * s, 8),
-      new THREE.MeshStandardMaterial({ color: PALETTE.leaf, roughness: 1 })
-    )
-    c2.position.y = 3.0 * s
-    c2.castShadow = true
-    tree.add(c2)
-    tree.position.set(x, 0, z)
-    tree.rotation.y = Math.random() * 6
-    scene.add(tree)
-    treePos.push(tree)
-  }
-
   // 云
   const clouds = []
   for (let i = 0; i < 5; i++) {
@@ -180,22 +148,10 @@ export async function createHub(container, hooks = {}) {
     clouds.push({ g: cl, v: 0.4 + Math.random() * 0.5 })
   }
 
-  // 池塘
-  const pond = new THREE.Mesh(
-    new THREE.CircleGeometry(3.2, 32),
-    new THREE.MeshStandardMaterial({ color: PALETTE.pond, roughness: 0.25, metalness: 0.1 })
-  )
-  pond.rotation.x = -Math.PI / 2
-  pond.position.set(20, 0.04, 14)
-  pond.receiveShadow = true
-  scene.add(pond)
-
-  /* ---------- 世界装饰 ---------- */
-  await makeLamps(scene, modules, RADIUS)
-  await makeNature(scene, [...zonePts, { x: 0, z: 0 }, { x: 21, z: 13 }])
-  await makeSignposts(scene, modules, RADIUS)
+  /* ---------- 世界装饰（原站道具） ---------- */
+  await makeSignposts(scene, modules)
   await makeLake(scene)
-  await makeFlowerBeds(scene)
+  const propColliders = await decorateWorld(scene, modules, RADIUS, zonePts)
 
   /* ---------- 粒子 + 成就 ---------- */
   const particles = await createParticles(scene)
@@ -229,8 +185,14 @@ export async function createHub(container, hooks = {}) {
   }
   for (const s of solids) addSolidCollider(s)
   addSolidCollider(obelisk)
-  for (const t of treePos) {
-    phys.createCollider(RAPIER.ColliderDesc.cylinder(0.6, 0.28).setTranslation(t.position.x, 0.6, t.position.z))
+  // 原站道具碰撞体
+  for (const c of propColliders.cylinders) {
+    phys.createCollider(RAPIER.ColliderDesc.cylinder(c.h / 2, c.r).setTranslation(c.x, c.h / 2, c.z))
+  }
+  for (const b of propColliders.boxes) {
+    phys.createCollider(
+      RAPIER.ColliderDesc.cuboid(b.hx, b.hy, b.hz).setTranslation(b.x, b.hy, b.z).setFriction(0.4)
+    )
   }
 
   /* ---------- 吉普车 ---------- */
