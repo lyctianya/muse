@@ -456,7 +456,6 @@ export async function createHub(container, hooks = {}) {
     }
     // 标签浮动
     for (const l of labels) l.sp.position.y = l.baseY + Math.sin(t * 1.6 + l.phase) * 0.16
-    museLabel.position.y = 6.4 + Math.sin(t * 1.4) * 0.15
     renderer.render(scene, camera)
     raf = requestAnimationFrame(loop)
   }
