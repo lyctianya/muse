@@ -64,10 +64,10 @@ export async function buildJeep() {
 
 /* 街机手感：速度/转向直接驱动，碰撞交给 Rapier
    返回事件 { jumped, landed, crashed } */
-export function createCar(RAPIER, world, parts) {
+export function createCar(RAPIER, world, parts, spawn = { x: 0, y: 0.6, z: 11, yaw: Math.PI }) {
   const body = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic()
-      .setTranslation(0, 0.6, 11)
+      .setTranslation(spawn.x, spawn.y, spawn.z)
       .setLinearDamping(0.05)
       .setAngularDamping(1.5)
   )
@@ -79,12 +79,12 @@ export function createCar(RAPIER, world, parts) {
     body
   )
 
-  const S = { yaw: Math.PI, speed: 0, bounce: 0, wasAirborne: false, crashCool: 0 }
-  const prevPos = { x: 0, z: 11 }
+  const S = { yaw: spawn.yaw, speed: 0, bounce: 0, wasAirborne: false, crashCool: 0 }
+  const prevPos = { x: spawn.x, z: spawn.z }
 
   function step(dt, input) {
     const ev = { jumped: false, landed: false, crashed: false }
-    const max = input.boost ? 17 : 11
+    const max = input.boost ? 32 : 20
     if (input.throttle) S.speed += input.throttle * 15 * dt
     S.speed -= S.speed * 1.7 * dt            // 阻力
     if (input.brake) S.speed -= S.speed * 7 * dt // 刹车
@@ -151,9 +151,9 @@ export function createCar(RAPIER, world, parts) {
   }
 
   function respawn() {
-    S.yaw = Math.PI; S.speed = 0; S.wasAirborne = false
-    prevPos.x = 0; prevPos.z = 11
-    body.setTranslation({ x: 0, y: 0.6, z: 11 }, true)
+    S.yaw = spawn.yaw; S.speed = 0; S.wasAirborne = false
+    prevPos.x = spawn.x; prevPos.z = spawn.z
+    body.setTranslation({ x: spawn.x, y: spawn.y, z: spawn.z }, true)
     body.setLinvel({ x: 0, y: 0, z: 0 }, true)
     body.setAngvel({ x: 0, y: 0, z: 0 }, true)
   }

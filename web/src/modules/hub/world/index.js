@@ -1,9 +1,8 @@
 /* 3D 菜单世界：场景装配 + 轨道镜头 + 点击导航 */
 import { PALETTE, MODULE_STYLE } from './palette.js'
-import { BUILDERS } from './buildings.js'
 import { makeLabel } from './labels.js'
 import { buildJeep, createCar } from './car.js'
-import { makeRoads, makeSignposts, makeLake, decorateWorld } from './dressing.js'
+import { loadBrunoWorld, BUILDING_POS, WORLD_SPAWN, loadHeightGrid, groundHeightAt } from './brunoWorld.js'
 import { createParticles } from './particles.js'
 import { initAudio, engineUpdate, honk as honkSound, ding, boing, thud } from './audio.js'
 import { createTracker } from './achievements.js'
@@ -19,10 +18,22 @@ export const MODULES = [
   { id: 'users', title: '用户管理', desc: '用户 · 角色权限', route: '/users', perm: 'users:manage' },
 ]
 
-const RADIUS = 16 // 建筑环绕半径
+const RADIUS = 16 // 保留：旧世界半径（现用原站世界坐标）
 
 function cssColor(hex) {
   return '#' + hex.toString(16).padStart(6, '0')
+}
+
+/* 原站建筑碰撞体近似（中心 x,z / 半尺寸 hx,hz / 顶高 top，来自 areas.glb 烘焙坐标） */
+const BUILDING_SOLIDS = {
+  stock:   { x: 35.1,  z: 11.4,  hx: 5.5, hz: 4.5, top: 4.5 },
+  blog:    { x: 25.9,  z: -1.4,  hx: 5.0, hz: 9.5, top: 3.0 },
+  gallery: { x: 29.6,  z: -25.3, hx: 12.5, hz: 9.0, top: 5.5 },
+  game:    { x: 6.0,   z: 66.1,  hx: 21.0, hz: 13.0, top: 7.5 },
+  tools:   { x: 12.7,  z: 16.3,  hx: 4.8, hz: 4.0, top: 5.2 },
+  files:   { x: 51.6,  z: -11.2, hx: 4.5, hz: 5.8, top: 4.0 },
+  sync:    { x: 70.5,  z: 9.4,   hx: 5.5, hz: 6.5, top: 7.5 },
+  users:   { x: 48.5,  z: 38.5,  hx: 11.0, hz: 10.0, top: 5.0 },
 }
 
 export async function createHub(container, hooks = {}) {
@@ -40,9 +51,9 @@ export async function createHub(container, hooks = {}) {
 
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(PALETTE.sky)
-  scene.fog = new THREE.Fog(PALETTE.fog, 55, 115)
+  scene.fog = new THREE.Fog(PALETTE.fog, 90, 260)
 
-  const camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 300)
+  const camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 600)
 
   // 灯光
   scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x9aa86b, 0.95))
@@ -50,84 +61,46 @@ export async function createHub(container, hooks = {}) {
   sun.position.set(22, 30, 14)
   sun.castShadow = true
   sun.shadow.mapSize.set(2048, 2048)
-  sun.shadow.camera.left = -34; sun.shadow.camera.right = 34
-  sun.shadow.camera.top = 34; sun.shadow.camera.bottom = -34
-  sun.shadow.camera.far = 90
+  sun.shadow.camera.left = -45; sun.shadow.camera.right = 45
+  sun.shadow.camera.top = 45; sun.shadow.camera.bottom = -45
+  sun.shadow.camera.far = 120
   sun.shadow.bias = -0.0004
   scene.add(sun)
 
-  // 地面
-  const ground = new THREE.Mesh(
-    new THREE.CircleGeometry(40, 48),
-    new THREE.MeshStandardMaterial({ color: PALETTE.ground, roughness: 1 })
-  )
-  ground.rotation.x = -Math.PI / 2
-  ground.receiveShadow = true
-  scene.add(ground)
-
-  // 中心广场 + 纪念碑
-  const plaza = new THREE.Mesh(
-    new THREE.CircleGeometry(4.6, 40),
-    new THREE.MeshStandardMaterial({ color: PALETTE.plaza, roughness: 0.9 })
-  )
-  plaza.rotation.x = -Math.PI / 2
-  plaza.position.y = 0.02
-  plaza.receiveShadow = true
-  scene.add(plaza)
-  const obelisk = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.35, 0.95, 5.2, 4),
-    new THREE.MeshStandardMaterial({ color: PALETTE.gold, roughness: 0.4, metalness: 0.35 })
-  )
-  obelisk.position.y = 2.6
-  obelisk.castShadow = true
-  scene.add(obelisk)
-  const museLabel = await makeLabel('Muse', '#d3a24a')
-  museLabel.position.set(0, 6.4, 0)
-  scene.add(museLabel)
+  /* ---------- 原站完整世界（地形/建筑/树木/灌木/花） ---------- */
+  await loadBrunoWorld(scene)
 
   const modules = hooks.modules || MODULES
 
   // 等原站字体就绪再画标签
   try { await document.fonts.load('700 56px Pally') } catch (e) { /* fallback */ }
 
-  // 道路（纹理柏油路 + 中央虚线）
-  await makeRoads(scene, modules, RADIUS)
-
-  // 建筑
+  // 模块交互点：放在原站建筑位置上空
   const pickables = []
-  const solids = [] // 用于生成物理碰撞体（不含悬浮标签）
   const zonePts = [] // 触发区：建筑位置
-  const chimneys = [] // 烟囱冒烟：{ wrap, local }
   const labels = []
-  const spinners = []
-  const bobbers = []
-  for (let i = 0; i < modules.length; i++) {
-    const m = modules[i]
-    const builder = BUILDERS[m.id]
-    if (!builder) continue
-    const g = await builder()
-    const a = (i / modules.length) * Math.PI * 2 + Math.PI / modules.length
-    // 位移组包裹：保留建筑内部的 position.y（如 gallery 的 0.4）
-    const innerY = g.position.y
-    const wrap = new THREE.Group()
-    wrap.add(g)
-    g.position.set(0, innerY, 0)
-    wrap.position.set(Math.cos(a) * RADIUS, 0, Math.sin(a) * RADIUS)
-    wrap.rotation.y = -a - Math.PI / 2 // 面向中心
-    wrap.userData.moduleId = m.id
-    solids.push(g)
-    zonePts.push({ id: m.id, x: wrap.position.x, z: wrap.position.z })
+  const hitZones = [] // 隐形点击柱
+  for (const m of modules) {
+    const bp = BUILDING_POS[m.id]
+    if (!bp) continue
+    const solid = BUILDING_SOLIDS[m.id] || { hx: 5, hz: 5, top: 5 }
+    zonePts.push({ id: m.id, x: bp.x, z: bp.z })
     const accent = cssColor((MODULE_STYLE[m.id] || {}).accent || 0xd3a24a)
     const label = await makeLabel(m.title, accent)
-    label.position.set(0, g.userData.labelY || 5, 0)
-    wrap.add(label)
+    label.position.set(bp.x, solid.top + 3.2, bp.z)
+    label.userData.moduleId = m.id
+    scene.add(label)
     labels.push({ sp: label, baseY: label.position.y, phase: Math.random() * 6 })
-    if (g.userData.spin) spinners.push(g.userData.spin)
-    if (g.userData.bob) bobbers.push({ o: g.userData.bob, baseY: g.userData.bob.position.y, phase: Math.random() * 6 })
-    if (g.userData.chimneyLocal) chimneys.push({ wrap, gpos: { x: g.position.x, y: g.position.y, z: g.position.z }, local: g.userData.chimneyLocal })
-    g.traverse((o) => { o.userData.moduleId = m.id })
-    scene.add(wrap)
-    pickables.push(wrap)
+    // 隐形点击柱（方便点选建筑）
+    const hz = new THREE.Mesh(
+      new THREE.CylinderGeometry(Math.max(solid.hx, solid.hz) * 0.9, Math.max(solid.hx, solid.hz) * 0.9, solid.top + 4, 8),
+      new THREE.MeshBasicMaterial({ visible: false })
+    )
+    hz.position.set(bp.x, (solid.top + 4) / 2, bp.z)
+    hz.userData.moduleId = m.id
+    scene.add(hz)
+    hitZones.push(hz)
+    pickables.push(hz)
   }
 
   // 云
@@ -143,15 +116,10 @@ export async function createHub(container, hooks = {}) {
       s.position.set(j * 1.8 - n * 0.9, Math.random() * 0.6, Math.random() * 1.2 - 0.6)
       cl.add(s)
     }
-    cl.position.set(-38 + Math.random() * 76, 15 + Math.random() * 5, -25 + Math.random() * 40)
+    cl.position.set(-90 + Math.random() * 180, 22 + Math.random() * 8, -90 + Math.random() * 180)
     scene.add(cl)
     clouds.push({ g: cl, v: 0.4 + Math.random() * 0.5 })
   }
-
-  /* ---------- 世界装饰（原站道具） ---------- */
-  await makeSignposts(scene, modules)
-  await makeLake(scene)
-  const propColliders = await decorateWorld(scene, modules, RADIUS, zonePts)
 
   /* ---------- 粒子 + 成就 ---------- */
   const particles = await createParticles(scene)
@@ -166,39 +134,33 @@ export async function createHub(container, hooks = {}) {
   await RAPIER.init()
   const phys = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
   phys.timestep = 1 / 60
-  phys.createCollider(RAPIER.ColliderDesc.cuboid(40, 0.5, 40).setTranslation(0, -0.5, 0))
-
-  scene.updateMatrixWorld(true)
-  const _bbox = new THREE.Box3()
-  const _size = new THREE.Vector3()
-  const _center = new THREE.Vector3()
-  function addSolidCollider(obj) {
-    _bbox.setFromObject(obj)
-    _bbox.getSize(_size)
-    _bbox.getCenter(_center)
-    if (_size.x <= 0 || _size.y <= 0 || _size.z <= 0) return
-    phys.createCollider(
-      RAPIER.ColliderDesc.cuboid(_size.x / 2, _size.y / 2, _size.z / 2)
-        .setTranslation(_center.x, _center.y, _center.z)
-        .setFriction(0.4)
-    )
+  // 地形高度场（129x129，原站地形烘焙）
+  {
+    const hg = await loadHeightGrid()
+    const N = 129
+    const heights = new Float32Array(N * N)
+    // Rapier heightfield: heights[row * ncols + col]，这里行=z、列=x
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) heights[r * N + c] = hg[r * N + c]
+    const scale = new RAPIER.Vector3(192 / (N - 1), 1, 192 / (N - 1))
+    const hfDesc = RAPIER.ColliderDesc.heightfield(N, N, heights, scale)
+      .setTranslation(-96, 0, -96)
+      .setFriction(0.9)
+    phys.createCollider(hfDesc)
   }
-  for (const s of solids) addSolidCollider(s)
-  addSolidCollider(obelisk)
-  // 原站道具碰撞体
-  for (const c of propColliders.cylinders) {
-    phys.createCollider(RAPIER.ColliderDesc.cylinder(c.h / 2, c.r).setTranslation(c.x, c.h / 2, c.z))
-  }
-  for (const b of propColliders.boxes) {
+  // 建筑碰撞体（近似盒）
+  for (const m of modules) {
+    const s = BUILDING_SOLIDS[m.id]
+    if (!s) continue
     phys.createCollider(
-      RAPIER.ColliderDesc.cuboid(b.hx, b.hy, b.hz).setTranslation(b.x, b.hy, b.z).setFriction(0.4)
+      RAPIER.ColliderDesc.cuboid(s.hx, s.top / 2, s.hz).setTranslation(s.x, s.top / 2, s.z).setFriction(0.4)
     )
   }
 
   /* ---------- 吉普车 ---------- */
   const jeep = await buildJeep()
   scene.add(jeep.carrier)
-  const car = createCar(RAPIER, phys, jeep)
+  const spawnY = groundHeightAt(WORLD_SPAWN.x, WORLD_SPAWN.z) + 0.7
+  const car = createCar(RAPIER, phys, jeep, { x: WORLD_SPAWN.x, y: spawnY, z: WORLD_SPAWN.z, yaw: WORLD_SPAWN.yaw })
   let chaseDist = 10.5
   { // 开车模式初始机位
     const p = car.pos, yaw = car.yaw
@@ -251,11 +213,13 @@ export async function createHub(container, hooks = {}) {
     manualLock = null
   }
   function nearestZone(p) {
-    let best = null, bd = 36 // 6^2
+    let best = null, bd = Infinity
     for (const z of zonePts) {
+      const s = BUILDING_SOLIDS[z.id]
+      const trig = s ? Math.max(s.hx, s.hz) + 5 : 8
       const dx = p.x - z.x, dz = p.z - z.z
       const d2 = dx * dx + dz * dz
-      if (d2 < bd) { bd = d2; best = z.id }
+      if (d2 < trig * trig && d2 < bd) { bd = d2; best = z.id }
     }
     return best
   }
@@ -427,7 +391,6 @@ export async function createHub(container, hooks = {}) {
   const _v3 = new THREE.Vector3()
   let acc = 0
   let dustAcc = 0
-  let smokeAcc = 0
   let raf = 0
   let destroyed = false
   function loop() {
@@ -471,6 +434,10 @@ export async function createHub(container, hooks = {}) {
       _chase.set(cp.x - fx * chaseDist, 5.2, cp.z - fz * chaseDist)
       camera.position.lerp(_chase, 1 - Math.exp(-4.5 * dt))
       camera.lookAt(cp.x + fx * 4, 1.7, cp.z + fz * 4)
+      // 阴影跟随车辆
+      sun.position.set(cp.x + 22, 30, cp.z + 14)
+      sun.target.position.set(cp.x, 0, cp.z)
+      sun.target.updateMatrixWorld()
     } else {
       if (autoRotate && !dragging) {
         orbit.goalTheta += dt * 0.06
@@ -484,27 +451,12 @@ export async function createHub(container, hooks = {}) {
     }
     // 喇叭气泡计时
     if (honkT > 0) { honkT -= dt; if (honkT <= 0) jeep.bubble.visible = false }
-    // 烟囱冒烟
-    smokeAcc += dt
-    if (smokeAcc > 0.4) {
-      smokeAcc = 0
-      for (const c of chimneys) {
-        _v3.set(c.local.x + c.gpos.x, c.local.y + c.gpos.y, c.local.z + c.gpos.z)
-        c.wrap.localToWorld(_v3)
-        particles.spawn(_v3.x, _v3.y, _v3.z,
-          { vy: 1.7, vx: 0.35, vz: 0.1, life: 1.7, size: 0.55, opacity: 0.32, color: 0xececec, grow: 1.7 })
-      }
-    }
     particles.update(dt)
     // 云漂移
     for (const c of clouds) {
       c.g.position.x += c.v * dt
-      if (c.g.position.x > 42) c.g.position.x = -42
+      if (c.g.position.x > 100) c.g.position.x = -100
     }
-    // 齿轮旋转
-    for (const s of spinners) s.rotation.z -= dt * 0.8
-    // 钥匙浮动
-    for (const b of bobbers) b.o.position.y = b.baseY + Math.sin(t * 2 + b.phase) * 0.22
     // 标签浮动
     for (const l of labels) l.sp.position.y = l.baseY + Math.sin(t * 1.6 + l.phase) * 0.16
     museLabel.position.y = 6.4 + Math.sin(t * 1.4) * 0.15

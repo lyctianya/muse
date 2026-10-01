@@ -43,3 +43,12 @@ SOFTWARE.
 ## 字体
 
 Pally 字体由 [Fontshare](https://www.fontshare.com/fonts/pally) 提供，可免费商用。
+
+## 世界模型（2026-10-01 新增）
+- `world/areas.glb`：原站全部建筑（烘焙世界坐标）
+- `world/terrain.glb` + `world/terrain.png`：原站地形
+- `world/scenery.glb`：布景
+- `world/*Visual.glb` + `world/*Refs.glb`：树木模板与摆放位置
+- `world/bushesRefs.glb`、`world/flowersRefs.glb`：灌木/花
+- `world/terrain_heights.raw`：由 terrain.glb 提取的地形高度场（用于物理）
+均来自 brunosimon/folio-2025（MIT，Copyright (c) 2025 Bruno Simon）。
