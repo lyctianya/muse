@@ -2,8 +2,13 @@
    模型 baked 了原站世界坐标，这里只提取"模板"并重新摆放到我们的世界 */
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
 
+// 原站部分道具用了 Draco 网格压缩，解码器放在 /hub/draco/
+const draco = new DRACOLoader()
+draco.setDecoderPath('/hub/draco/')
 const loader = new GLTFLoader()
+loader.setDRACOLoader(draco)
 const cache = new Map()
 
 export async function loadGLB(path) {
