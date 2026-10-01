@@ -90,7 +90,7 @@ export function createCar(RAPIER, world, parts) {
     if (input.brake) S.speed -= S.speed * 7 * dt // 刹车
     S.speed = clamp(S.speed, -5, max)
     const grip = clamp(Math.abs(S.speed) / 3.5, 0, 1)
-    S.yaw += input.steer * 2.1 * grip * (S.speed >= 0 ? 1 : -1) * dt
+    S.yaw -= input.steer * 2.1 * grip * (S.speed >= 0 ? 1 : -1) * dt
 
     // 跳跃（空格）：只在贴地时触发
     const p0 = body.translation()
@@ -138,7 +138,7 @@ export function createCar(RAPIER, world, parts) {
     parts.carrier.position.set(p.x, Math.max(0, p.y), p.z)
     parts.carrier.rotation.y = S.yaw
     for (const w of parts.wheels) {
-      if (w.front) w.steer.rotation.y = input.steer * 0.5
+      if (w.front) w.steer.rotation.y = -input.steer * 0.5
       for (const m of w.spinMeshes) m.rotation.z -= (S.speed * dt) / 0.43
     }
     // 悬挂起伏 + 加速/转向倾斜
