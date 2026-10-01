@@ -40,6 +40,14 @@ export async function buildJeep() {
       wc.traverse((o) => {
         if (o.isMesh && (o.name.startsWith('wheel.') || o.name === 'wheelPainted')) spinMeshes.push(o)
       })
+      // DEBUG：四轮染高亮色定位缺失轮（红绿蓝黄 = 前左/前右/后左/后右），确认后改回
+      const dbgColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00]
+      const ci = defs.indexOf(defs.find((d) => d[0] === sx && d[1] === sz))
+      wc.traverse((o) => {
+        if (o.isMesh) {
+          o.material = new THREE.MeshBasicMaterial({ color: dbgColors[ci] || 0xffffff })
+        }
+      })
     }
     align.add(steer)
     wheels.push({ steer, spinMeshes, front })
