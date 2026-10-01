@@ -24,6 +24,10 @@
         <span class="hub-logo">Muse</span>
         <span class="hub-sub">3D 菜单</span>
       </div>
+      <a-radio-group v-model="mode" type="button" size="small" @change="onModeChange" class="hub-modes">
+        <a-radio value="drive">🚗 开车</a-radio>
+        <a-radio value="orbit">🔭 漫游</a-radio>
+      </a-radio-group>
       <div class="hub-user">
         <a-tag color="gold">{{ today }}</a-tag>
         <a-dropdown v-if="authState.user" @select="onUserMenu">
@@ -41,7 +45,19 @@
 
     <!-- 底部提示 -->
     <div v-if="!fallback && !selected" class="hub-hint">
-      拖拽旋转 · 滚轮缩放 · 点击建筑进入对应模块
+      {{ mode === 'drive'
+        ? 'WASD / 方向键开车 · Shift 加速 · 空格刹车 · R 回起点 · 靠近建筑自动弹出'
+        : '拖拽旋转 · 滚轮缩放 · 点击建筑进入对应模块' }}
+    </div>
+
+    <!-- 开车模式：重置位置 -->
+    <a-button v-if="!fallback && mode === 'drive'" class="hub-respawn" size="small" @click="hub && hub.respawn()">
+      <template #icon><icon-refresh /></template>回起点
+    </a-button>
+
+    <!-- 触屏摇杆（开车模式） -->
+    <div v-if="!fallback && mode === 'drive' && isTouch" ref="joyBase" class="hub-joy" @pointerdown="joyDown" @pointermove="joyMove" @pointerup="joyUp" @pointercancel="joyUp">
+      <div class="hub-joy-knob" :style="joyStyle" />
     </div>
 
     <!-- 选中模块卡片 -->
@@ -64,17 +80,27 @@ import { authState, hasPerm, logout, loadUser } from '../../../platform/utils/au
 import { fmtDateLocal } from '../../../platform/utils/date.js'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import { IconUser } from '@arco-design/web-vue/es/icon'
+import { IconUser, IconRefresh } from '@arco-design/web-vue/es/icon'
 
 const router = useRouter()
 const stage = ref(null)
 const loading = ref(true)
 const fallback = ref(false)
 const selected = ref(null)
+const mode = ref('drive')
+const isTouch = 'ontouchstart' in window
+const joyBase = ref(null)
+const joyStyle = ref({})
 let hub = null
+let joyId = null
 
 const today = computed(() => fmtDateLocal(new Date()))
 const visibleModules = computed(() => MODULES.filter((m) => hasPerm(m.perm)))
+
+function onModeChange(v) {
+  selected.value = null
+  hub && hub.setMode(v)
+}
 
 function onUserMenu(v) {
   if (v === 'logout') {
@@ -90,7 +116,39 @@ function enter() {
 }
 function back() {
   selected.value = null
-  hub && hub.resetView()
+  if (hub && mode.value === 'orbit') hub.resetView()
+}
+
+/* 触屏摇杆 */
+function joySet(e) {
+  const el = joyBase.value
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2
+  let dx = e.clientX - cx, dy = e.clientY - cy
+  const max = r.width / 2 - 14
+  const len = Math.hypot(dx, dy)
+  if (len > max) { dx = dx / len * max; dy = dy / len * max }
+  joyStyle.value = { transform: `translate(${dx}px, ${dy}px)` }
+  if (hub) {
+    hub.input.joySteer = dx / max
+    hub.input.joyThrottle = -dy / max
+  }
+}
+function joyDown(e) {
+  joyId = e.pointerId
+  e.currentTarget.setPointerCapture(e.pointerId)
+  joySet(e)
+}
+function joyMove(e) {
+  if (e.pointerId !== joyId) return
+  joySet(e)
+}
+function joyUp(e) {
+  if (e.pointerId !== joyId) return
+  joyId = null
+  joyStyle.value = {}
+  if (hub) { hub.input.joySteer = 0; hub.input.joyThrottle = 0 }
 }
 
 onMounted(async () => {
@@ -100,8 +158,9 @@ onMounted(async () => {
       modules: visibleModules.value,
       onSelect: (mod) => {
         selected.value = mod
-        hub.focusTo(mod.id)
+        if (mode.value === 'orbit') hub.focusTo(mod.id)
       },
+      onDeselect: () => { selected.value = null },
     })
   } catch (e) {
     console.error('3D 初始化失败', e)
@@ -152,4 +211,20 @@ onBeforeUnmount(() => {
 .hub-card :deep(.arco-card) { border-radius: 14px; border: 2px solid #d3a24a; box-shadow: 0 8px 30px rgba(26,35,64,0.25); }
 .hub-card-title { font-size: 20px; font-weight: 700; color: #1a2340; }
 .hub-card-desc { font-size: 13px; color: #86909c; margin-top: 4px; }
+.hub-modes { background: rgba(255,255,255,0.85); border-radius: 8px; padding: 2px; }
+.hub-respawn {
+  position: absolute; bottom: 22px; right: 20px; z-index: 10;
+  background: rgba(255,255,255,0.9); border: 1px solid #d3a24a;
+}
+.hub-joy {
+  position: absolute; bottom: 70px; left: 24px; z-index: 10;
+  width: 120px; height: 120px; border-radius: 50%;
+  background: rgba(26,35,64,0.25); border: 2px solid rgba(255,255,255,0.6);
+  touch-action: none;
+}
+.hub-joy-knob {
+  position: absolute; left: 50%; top: 50%;
+  width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%;
+  background: rgba(255,255,255,0.9); border: 2px solid #d3a24a;
+}
 </style>

@@ -2,6 +2,7 @@
 import { PALETTE, MODULE_STYLE } from './palette.js'
 import { BUILDERS } from './buildings.js'
 import { makeLabel } from './labels.js'
+import { buildJeep, createCar } from './car.js'
 
 export const MODULES = [
   { id: 'stock', title: '股票', desc: '市场概览 · 行情 · 选股', route: '/market', perm: 'market:view' },
@@ -97,6 +98,8 @@ export async function createHub(container, hooks = {}) {
 
   // 建筑
   const pickables = []
+  const solids = [] // 用于生成物理碰撞体（不含悬浮标签）
+  const zonePts = [] // 触发区：建筑位置
   const labels = []
   const spinners = []
   const bobbers = []
@@ -113,6 +116,9 @@ export async function createHub(container, hooks = {}) {
     g.position.set(0, innerY, 0)
     wrap.position.set(Math.cos(a) * RADIUS, 0, Math.sin(a) * RADIUS)
     wrap.rotation.y = -a - Math.PI / 2 // 面向中心
+    wrap.userData.moduleId = m.id
+    solids.push(g)
+    zonePts.push({ id: m.id, x: wrap.position.x, z: wrap.position.z })
     const accent = cssColor((MODULE_STYLE[m.id] || {}).accent || 0xd3a24a)
     const label = await makeLabel(m.title, accent)
     label.position.set(0, g.userData.labelY || 5, 0)
@@ -188,6 +194,124 @@ export async function createHub(container, hooks = {}) {
   pond.receiveShadow = true
   scene.add(pond)
 
+  /* ---------- Rapier 物理 ---------- */
+  const rapierMod = await import('@dimforge/rapier3d-compat')
+  const RAPIER = rapierMod.default
+  await RAPIER.init()
+  const phys = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
+  phys.timestep = 1 / 60
+  phys.createCollider(RAPIER.ColliderDesc.cuboid(40, 0.5, 40).setTranslation(0, -0.5, 0))
+
+  scene.updateMatrixWorld(true)
+  const _bbox = new THREE.Box3()
+  const _size = new THREE.Vector3()
+  const _center = new THREE.Vector3()
+  function addSolidCollider(obj) {
+    _bbox.setFromObject(obj)
+    _bbox.getSize(_size)
+    _bbox.getCenter(_center)
+    if (_size.x <= 0 || _size.y <= 0 || _size.z <= 0) return
+    phys.createCollider(
+      RAPIER.ColliderDesc.cuboid(_size.x / 2, _size.y / 2, _size.z / 2)
+        .setTranslation(_center.x, _center.y, _center.z)
+        .setFriction(0.4)
+    )
+  }
+  for (const s of solids) addSolidCollider(s)
+  addSolidCollider(obelisk)
+  for (const t of treePos) {
+    phys.createCollider(RAPIER.ColliderDesc.cylinder(0.6, 0.28).setTranslation(t.position.x, 0.6, t.position.z))
+  }
+
+  /* ---------- 吉普车 ---------- */
+  const jeep = await buildJeep()
+  scene.add(jeep.carrier)
+  const car = createCar(RAPIER, phys, jeep)
+  let chaseDist = 10.5
+  { // 开车模式初始机位
+    const p = car.pos, yaw = car.yaw
+    const fx = Math.sin(yaw), fz = Math.cos(yaw)
+    camera.position.set(p.x - fx * chaseDist, 5.2, p.z - fz * chaseDist)
+    camera.lookAt(p.x + fx * 4, 1.7, p.z + fz * 4)
+  }
+
+  /* ---------- 输入（键盘 + 摇杆） ---------- */
+  const input = { throttle: 0, steer: 0, brake: false, boost: false, joyThrottle: 0, joySteer: 0 }
+  const keys = new Set()
+  const clamp01 = (v) => Math.max(-1, Math.min(1, v))
+  function onKeyDown(e) {
+    const k = e.key.toLowerCase()
+    if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault()
+    if (k === 'r' && mode === 'drive') car.respawn()
+    keys.add(k)
+  }
+  function onKeyUp(e) { keys.delete(e.key.toLowerCase()) }
+  window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('keyup', onKeyUp)
+  function pollKeys() {
+    const up = keys.has('w') || keys.has('arrowup')
+    const down = keys.has('s') || keys.has('arrowdown')
+    const left = keys.has('a') || keys.has('arrowleft')
+    const right = keys.has('d') || keys.has('arrowright')
+    input.throttle = clamp01((up ? 1 : 0) + (down ? -0.65 : 0) + input.joyThrottle)
+    input.steer = clamp01((right ? 1 : 0) + (left ? -1 : 0) + input.joySteer)
+    input.brake = keys.has(' ')
+    input.boost = keys.has('shift')
+  }
+
+  /* ---------- 模式：drive 开车 / orbit 漫游 ---------- */
+  let mode = 'drive'
+  let zoneId = null
+  let manualLock = null
+  function clearZone() {
+    if (zoneId && hooks.onDeselect) hooks.onDeselect()
+    zoneId = null
+    manualLock = null
+  }
+  function nearestZone(p) {
+    let best = null, bd = 36 // 6^2
+    for (const z of zonePts) {
+      const dx = p.x - z.x, dz = p.z - z.z
+      const d2 = dx * dx + dz * dz
+      if (d2 < bd) { bd = d2; best = z.id }
+    }
+    return best
+  }
+  function checkZone() {
+    const p = car.pos
+    if (manualLock) {
+      const moved = Math.hypot(p.x - manualLock.x, p.z - manualLock.z)
+      const now = nearestZone(p)
+      if (moved <= 2.5 && (!now || now === manualLock.id)) return // 保持手动选中
+      manualLock = null
+    }
+    const best = nearestZone(p)
+    if (best !== zoneId) {
+      zoneId = best
+      if (best) {
+        const mod = modules.find((m) => m.id === best)
+        if (mod && hooks.onSelect) hooks.onSelect(mod)
+      } else if (hooks.onDeselect) hooks.onDeselect()
+    }
+  }
+  function setMode(m) {
+    if (m === mode) return
+    mode = m
+    autoRotate = false
+    clearZone()
+    if (m === 'orbit') {
+      // 以车为中心过渡到轨道镜头
+      const p = car.pos
+      orbit.goalTarget.set(p.x, 2.2, p.z)
+      const off = camera.position.clone().sub(orbit.goalTarget)
+      const len = Math.max(13, Math.min(48, off.length()))
+      orbit.goalRadius = len
+      orbit.goalTheta = Math.atan2(off.x, off.z)
+      const cosPhi = Math.max(-1, Math.min(1, off.y / off.length()))
+      orbit.goalPhi = Math.max(0.45, Math.min(1.35, Math.acos(cosPhi)))
+    }
+  }
+
   /* ---------- 镜头（手写轨道 + 阻尼） ---------- */
   const orbit = {
     target: new THREE.Vector3(0, 2.2, 0),
@@ -234,6 +358,7 @@ export async function createHub(container, hooks = {}) {
     const dx = e.clientX - downX, dy = e.clientY - downY
     moved += Math.abs(dx) + Math.abs(dy)
     downX = e.clientX; downY = e.clientY
+    if (mode === 'drive') return // 开车模式下拖拽不转镜头
     orbit.goalTheta -= dx * 0.0052
     orbit.theta -= dx * 0.0052
     orbit.goalPhi = Math.min(1.35, Math.max(0.45, orbit.goalPhi - dy * 0.003))
@@ -246,6 +371,10 @@ export async function createHub(container, hooks = {}) {
   el.addEventListener('wheel', (e) => {
     e.preventDefault()
     autoRotate = false
+    if (mode === 'drive') { // 开车模式：滚轮调跟车距离
+      chaseDist = Math.min(15, Math.max(7, chaseDist * (1 + e.deltaY * 0.001)))
+      return
+    }
     const f = 1 + e.deltaY * 0.001
     orbit.goalRadius = Math.min(48, Math.max(13, orbit.goalRadius * f))
     orbit.radius = Math.min(48, Math.max(13, orbit.radius * f))
@@ -279,7 +408,16 @@ export async function createHub(container, hooks = {}) {
     while (o && !o.userData.moduleId) o = o.parent
     if (!o) return
     const mod = modules.find((m) => m.id === o.userData.moduleId)
-    if (mod && hooks.onSelect) hooks.onSelect(mod)
+    if (!mod) return
+    if (mode === 'drive') {
+      // 开车模式：点击建筑手动选中（开车离开后解锁）
+      const p = car.pos
+      manualLock = { id: mod.id, x: p.x, z: p.z }
+      zoneId = mod.id
+    } else {
+      focusTo(mod.id)
+    }
+    if (hooks.onSelect) hooks.onSelect(mod)
   }
 
   function focusTo(moduleId) {
@@ -299,17 +437,38 @@ export async function createHub(container, hooks = {}) {
 
   /* ---------- 主循环 ---------- */
   const clock = new THREE.Clock()
+  const STEP = 1 / 60
+  const ZERO_INPUT = { throttle: 0, steer: 0, brake: false, boost: false }
+  const _chase = new THREE.Vector3()
+  let acc = 0
   let raf = 0
   let destroyed = false
   function loop() {
     if (destroyed) return
     const dt = Math.min(0.05, clock.getDelta())
     const t = clock.elapsedTime
-    if (autoRotate && !dragging) {
-      orbit.goalTheta += dt * 0.06
-      orbit.theta += dt * 0.06
+    if (mode === 'drive') {
+      pollKeys()
+      acc += dt
+      let n = 0
+      while (acc >= STEP && n < 4) { car.step(STEP, input); phys.step(); acc -= STEP; n++ }
+      checkZone()
+      // 追踪镜头
+      const p = car.pos, yaw = car.yaw
+      const fx = Math.sin(yaw), fz = Math.cos(yaw)
+      _chase.set(p.x - fx * chaseDist, 5.2, p.z - fz * chaseDist)
+      camera.position.lerp(_chase, 1 - Math.exp(-4.5 * dt))
+      camera.lookAt(p.x + fx * 4, 1.7, p.z + fz * 4)
+    } else {
+      if (autoRotate && !dragging) {
+        orbit.goalTheta += dt * 0.06
+        orbit.theta += dt * 0.06
+      }
+      applyOrbit(dt)
+      acc += dt
+      let n = 0
+      while (acc >= STEP && n < 4) { car.step(STEP, ZERO_INPUT); phys.step(); acc -= STEP; n++ }
     }
-    applyOrbit(dt)
     // 云漂移
     for (const c of clouds) {
       c.g.position.x += c.v * dt
@@ -340,10 +499,16 @@ export async function createHub(container, hooks = {}) {
   return {
     focusTo,
     resetView,
+    setMode,
+    getMode: () => mode,
+    respawn: () => car.respawn(),
+    input, // 摇杆写入 joyThrottle / joySteer
     destroy() {
       destroyed = true
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', onResize)
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose()
         if (o.material) {
