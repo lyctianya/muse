@@ -17,12 +17,12 @@ import sys
 import threading
 import uuid
 from datetime import date, datetime
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.platform.auth import require_perm
+from api.platform.deps import ROOT
 
 from fetcher.sync_freshness import needs_update
 from fetcher.sync_registry import DAILY_COLS, TABLES
@@ -31,7 +31,6 @@ from fetcher import sync_status as ss
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-ROOT = Path(__file__).resolve().parents[2]
 LOG_DIR = ROOT / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
