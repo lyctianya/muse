@@ -43,7 +43,7 @@ export function groundHeightAt(x, z) {
 async function instanceFromRefs(scene, visualPath, refsPath, namePrefix, matFor = null) {
   const visual = await loadGLB(visualPath)
   const refs = await loadGLB(refsPath)
-  let count = 0
+  const positions = []
   refs.traverse((o) => {
     if (!o.isMesh && o.name && o.name.startsWith(namePrefix)) {
       const inst = visual.clone(true)
@@ -59,11 +59,11 @@ async function instanceFromRefs(scene, visualPath, refsPath, namePrefix, matFor 
       inst.quaternion.copy(o.quaternion)
       inst.scale.copy(o.scale)
       scene.add(inst)
-      count++
+      positions.push(o.position.clone())
     }
   })
   // refs 自身不加入场景（只用它做 placement）
-  return count
+  return { count: positions.length, positions }
 }
 
 /* 树的纯色材质（按名称区分树干/树叶） */
@@ -80,14 +80,64 @@ function treeMaterials(trunkColor, leafColor) {
 }
 
 export async function loadBrunoWorld(scene) {
-  // 地形：贴原站地形纹理（贴图自带手绘色彩，用无光照材质避免被灯光推成霓虹色）
+  // 地形：原站 Terrain.js 把 terrain.png 当数据纹理解码（非颜色贴图！）
+  //   B 通道 = 高度 → 查 1×16 渐变（#ffa94e 橙 → #5bc2b9 青 → #13375f 深蓝）
+  //   G 通道 = 草地 mask → 与草绿 #b8b62e 混合
+  //   R 通道 = 石板 mask → 混石板色
+  //   采样 uv = 世界坐标 / 192 + 0.5
   const terrain = await loadGLB('/hub/world/terrain.glb')
   {
-    const tex = await new THREE.TextureLoader().loadAsync('/hub/world/terrain.png')
-    tex.colorSpace = THREE.SRGBColorSpace
+    const dataTex = await new THREE.TextureLoader().loadAsync('/hub/world/terrain.png')
+    dataTex.colorSpace = THREE.NoColorSpace
+    // 高度渐变：1×16，B=0 深蓝（低）→ B=1 橙（高）
+    const gc = document.createElement('canvas')
+    gc.width = 1; gc.height = 16
+    const gctx = gc.getContext('2d')
+    const grad = gctx.createLinearGradient(0, 16, 0, 0)
+    grad.addColorStop(0, '#13375f')
+    grad.addColorStop(0.5, '#5bc2b9')
+    grad.addColorStop(1, '#ffa94e')
+    gctx.fillStyle = grad
+    gctx.fillRect(0, 0, 1, 16)
+    const gradTex = new THREE.CanvasTexture(gc)
+    gradTex.colorSpace = THREE.SRGBColorSpace
+    const terrainMat = new THREE.ShaderMaterial({
+      uniforms: {
+        dataMap: { value: dataTex },
+        gradMap: { value: gradTex },
+        grassColor: { value: new THREE.Color('#b8b62e') },
+        slabColor: { value: new THREE.Color('#c9a06a') },
+      },
+      vertexShader: `
+        varying vec3 vWorldPos;
+        void main() {
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D dataMap;
+        uniform sampler2D gradMap;
+        uniform vec3 grassColor;
+        uniform vec3 slabColor;
+        varying vec3 vWorldPos;
+        void main() {
+          vec2 uv = vWorldPos.xz / 192.0 + 0.5;
+          vec3 data = texture2D(dataMap, uv).rgb;
+          // B = 高度 → 渐变
+          vec3 col = texture2D(gradMap, vec2(0.5, data.b)).rgb;
+          // G = 草地 mask → 混草绿
+          col = mix(col, grassColor, clamp(data.g * 1.2, 0.0, 1.0));
+          // R = 石板 mask → 混石板色
+          col = mix(col, slabColor, clamp(data.r * 0.85, 0.0, 1.0));
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `,
+    })
     terrain.traverse((o) => {
       if (o.isMesh) {
-        o.material = new THREE.MeshBasicMaterial({ map: tex })
+        o.material = terrainMat
         o.receiveShadow = true
       }
     })
@@ -114,7 +164,8 @@ export async function loadBrunoWorld(scene) {
   scene.add(bushes)
   scene.add(await loadGLB('/hub/world/flowersRefs.glb'))
 
-  console.log(`[hub] 世界加载完成：建筑群 + 地形 + ${nb + no + nc} 棵树 + 灌木花丛`)
+  const treePositions = [...nb.positions, ...no.positions, ...nc.positions]
+  console.log(`[hub] 世界加载完成：建筑群 + 地形 + ${treePositions.length} 棵树 + 灌木花丛`)
   await loadHeightGrid()
-  return true
+  return { treePositions }
 }

@@ -70,7 +70,7 @@ export async function createHub(container, hooks = {}) {
   scene.add(sun)
 
   /* ---------- 原站完整世界（地形/建筑/树木/灌木/花） ---------- */
-  await loadBrunoWorld(scene)
+  const { treePositions } = await loadBrunoWorld(scene)
 
   const modules = hooks.modules || MODULES
 
@@ -152,6 +152,12 @@ export async function createHub(container, hooks = {}) {
     if (!s) continue
     phys.createCollider(
       RAPIER.ColliderDesc.cuboid(s.hx, s.top / 2, s.hz).setTranslation(s.x, s.top / 2, s.z).setFriction(0.4)
+    )
+  }
+  // 树木碰撞体（原站 Trees.setPhysical：圆柱，高 2.5 半径 0.15，位置 y+2.5）
+  for (const p of treePositions || []) {
+    phys.createCollider(
+      RAPIER.ColliderDesc.cylinder(1.25, 0.15).setTranslation(p.x, p.y + 2.5, p.z).setFriction(0.7)
     )
   }
 
