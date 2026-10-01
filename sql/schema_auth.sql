@@ -60,14 +60,16 @@ INSERT INTO permissions (key, description) VALUES
     ('gallery:upload', '相册新建 / 照片上传'),
     ('gallery:manage', '相册删除管理'),
     ('game:view', '游戏 / 排行榜'),
-    ('tools:use', '工具箱')
+    ('tools:use', '工具箱'),
+    ('ai:use', 'AI 对话'),
+    ('ai:manage', 'AI 全局模型管理')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------- 种子：角色 ----------------
 INSERT INTO roles (name, description) VALUES
     ('admin', '管理员：全部权限'),
     ('operator', '运维：除用户管理外全部权限'),
-    ('viewer', '只读：市场概览 / 行情 / 市场深度 / 周文件下载 / 文件查看 / 博客 / 相册 / 游戏')
+    ('viewer', '只读：市场概览 / 行情 / 市场深度 / 周文件下载 / 文件查看 / 博客 / 相册 / 游戏 / AI 对话')
 ON CONFLICT (name) DO NOTHING;
 
 -- ---------------- 种子：角色-权限 ----------------
@@ -82,10 +84,11 @@ SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.name = 'operator' AND p.key <> 'users:manage'
 ON CONFLICT DO NOTHING;
 
--- viewer：只读九项
+-- viewer：只读十项（含 AI 对话）
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.name = 'viewer'
   AND p.key IN ('market:view', 'quotes:view', 'extra:view', 'weeks:download',
-                'files:view', 'blog:view', 'gallery:view', 'game:view', 'tools:use')
+                'files:view', 'blog:view', 'gallery:view', 'game:view', 'tools:use',
+                'ai:use')
 ON CONFLICT DO NOTHING;

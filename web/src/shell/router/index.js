@@ -18,6 +18,8 @@ import GalleryView from '../../modules/gallery/views/GalleryView.vue'
 import AlbumView from '../../modules/gallery/views/AlbumView.vue'
 import GameView from '../../modules/game/views/GameView.vue'
 import ToolsView from '../../modules/tools/views/ToolsView.vue'
+import ChatView from '../../modules/ai/views/ChatView.vue'
+import ModelSettings from '../../modules/ai/views/ModelSettings.vue'
 import HubView from '../../modules/hub/views/HubView.vue'
 import { authState, hasPerm, loadUser } from '../../platform/utils/auth.js'
 
@@ -45,6 +47,8 @@ const router = createRouter({
     { path: '/gallery/:id', name: 'album', component: AlbumView, meta: { perm: 'gallery:view' } },
     { path: '/game', name: 'game', component: GameView, meta: { perm: 'game:view' } },
     { path: '/tools', name: 'tools', component: ToolsView, meta: { perm: 'tools:use' } },
+    { path: '/ai', name: 'ai', component: ChatView, meta: { perm: 'ai:use' } },
+    { path: '/ai/models', name: 'ai-models', component: ModelSettings, meta: { perm: 'ai:use' } },
   ],
 })
 

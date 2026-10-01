@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from api.modules.ai import router as ai_router
 from api.modules.blog import router as blog_router
 from api.modules.files import router as files_router
 from api.modules.gallery import router as gallery_router
@@ -53,6 +54,7 @@ app.include_router(files_router, prefix="/api/files")
 app.include_router(blog_router, prefix="/api/blog")
 app.include_router(gallery_router, prefix="/api/gallery")
 app.include_router(game_router, prefix="/api/game")
+app.include_router(ai_router, prefix="/api/ai")
 
 
 # 前端托管：/api 路由优先，其余全部落到前端单页

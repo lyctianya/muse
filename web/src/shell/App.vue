@@ -29,6 +29,7 @@
         <a-menu-item v-if="can('gallery:view')" key="gallery"><template #icon><icon-image /></template>相册</a-menu-item>
         <a-menu-item v-if="can('game:view')" key="game"><template #icon><icon-trophy /></template>游戏</a-menu-item>
         <a-menu-item v-if="can('tools:use')" key="tools"><template #icon><icon-tool /></template>工具箱</a-menu-item>
+        <a-menu-item v-if="can('ai:use')" key="ai"><template #icon><icon-robot /></template>AI 对话</a-menu-item>
       </a-menu>
       <div class="sider-foot" v-show="!collapsed">
         <div class="foot-title">A股 · 港股 · 美股</div>
@@ -82,7 +83,7 @@ const NAV = {
   hub: '3D 菜单', home: '市场概览', search: '股票搜索', weeks: '周文件下载', extra: '市场深度',
   sync: '数据更新', screener: '策略选股', watchlist: '自选股', users: '用户管理',
   files: '文件管理', chart: 'K线行情', company: '公司详情',
-  blog: '博客', gallery: '相册', game: '游戏', tools: '工具箱',
+  blog: '博客', gallery: '相册', game: '游戏', tools: '工具箱', ai: 'AI 对话',
 }
 const can = (perm) => hasPerm(perm)
 const activeKey = computed(() => {
@@ -97,6 +98,7 @@ const activeKey = computed(() => {
   if (route.name === 'gallery' || route.name === 'album') return 'gallery'
   if (route.name === 'game') return 'game'
   if (route.name === 'tools') return 'tools'
+  if (route.name === 'ai' || route.name === 'ai-models') return 'ai'
   if (route.name === 'hub') return 'hub'
   if (route.name === 'search' || route.name === 'chart' || route.name === 'company') return 'search'
   return 'home'
