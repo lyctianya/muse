@@ -18,17 +18,18 @@ export async function buildJeep() {
   tilt.add(align)
   for (const child of [...root.children]) align.add(child)
 
-  // 4 个轮子：前轮 x=+0.87（模型空间）
-  const WHEEL_X = 0.87, WHEEL_Y = -0.42, WHEEL_Z = 0.70
+  // 4 个轮子：照原站 VisualVehicle.setWheels（offset x=0.90 z=0.75，+z 侧转 PI 镜像）
+  const WHEEL_X = 0.90, WHEEL_Y = -0.42, WHEEL_Z = 0.75
   const wheels = []
   if (!wheelTemplate) console.warn('[hub] wheelContainer 模板未找到，轮子将缺失')
   // 移除原模板（后面用克隆重建 4 个）
   if (wheelTemplate && wheelTemplate.parent) wheelTemplate.parent.remove(wheelTemplate)
+  // 顺序：前左(-z)/前右(+z)/后左(-z)/后右(+z)；+z 侧（右）需绕 Y 转 PI 镜像
   const defs = [
-    [WHEEL_X, -WHEEL_Z, true], [WHEEL_X, WHEEL_Z, true],
-    [-WHEEL_X, -WHEEL_Z, false], [-WHEEL_X, WHEEL_Z, false],
+    [WHEEL_X, -WHEEL_Z, true, false], [WHEEL_X, WHEEL_Z, true, true],
+    [-WHEEL_X, -WHEEL_Z, false, false], [-WHEEL_X, WHEEL_Z, false, true],
   ]
-  for (const [sx, sz, front] of defs) {
+  for (const [sx, sz, front, mirror] of defs) {
     const steer = new THREE.Group()
     steer.position.set(sx, WHEEL_Y, sz)
     // 转动件：wheel.006 / wheelPainted（转轴为模型 Z 向）
@@ -36,21 +37,14 @@ export async function buildJeep() {
     if (wheelTemplate) {
       const wc = wheelTemplate.clone(true)
       wc.position.set(0, 0, 0)
+      if (mirror) wc.rotation.y = Math.PI
       steer.add(wc)
       wc.traverse((o) => {
         if (o.isMesh && (o.name.startsWith('wheel.') || o.name === 'wheelPainted')) spinMeshes.push(o)
       })
-      // DEBUG：四轮染高亮色定位缺失轮（红绿蓝黄 = 前左/前右/后左/后右），确认后改回
-      const dbgColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00]
-      const ci = defs.indexOf(defs.find((d) => d[0] === sx && d[1] === sz))
-      wc.traverse((o) => {
-        if (o.isMesh) {
-          o.material = new THREE.MeshBasicMaterial({ color: dbgColors[ci] || 0xffffff })
-        }
-      })
     }
     align.add(steer)
-    wheels.push({ steer, spinMeshes, front })
+    wheels.push({ steer, spinMeshes, front, mirror })
   }
 
   // 落地：包围盒底面对齐 y=0
@@ -147,7 +141,9 @@ export function createCar(RAPIER, world, parts, spawn = { x: 0, y: 0.6, z: 11, y
     parts.carrier.rotation.y = S.yaw
     for (const w of parts.wheels) {
       if (w.front) w.steer.rotation.y = -input.steer * 0.5
-      for (const m of w.spinMeshes) m.rotation.z -= (S.speed * dt) / 0.43
+      // 镜像轮（+z 侧）转轴反向，需反转自转方向（照原站 VisualVehicle.update）
+      const dir = w.mirror ? 1 : -1
+      for (const m of w.spinMeshes) m.rotation.z += dir * (S.speed * dt) / 0.43
     }
     // 悬挂起伏 + 加速/转向倾斜
     S.bounce += dt * (5 + Math.abs(S.speed) * 1.4)
