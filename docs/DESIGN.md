@@ -50,7 +50,7 @@
 
 ## 3. 数据模型
 
-### 3.1 表清单（共 46 张）
+### 3.1 表清单（共 47 张）
 
 | 组 | 表 | 说明 |
 |---|---|---|
@@ -73,6 +73,7 @@
 | | `index_basic` / `index_weight` / `index_member` | 指数信息/权重/成分 |
 | | `cyq_perf` / `hk_hold` | 每日筹码/沪深港股通持股 |
 | 管理 | `sync_status` | 各表水位（最新日期/行数/同步时间） |
+| | `trade_calendar` | 交易日历缓存（SSE），新鲜度判定识别节假日休市 |
 | | `watchlist` | 自选股 |
 
 > `main_business`（东财旧表）已停用，`holder_trade` 已从东财口径迁移为 Tushare `stk_holdertrade` 口径。

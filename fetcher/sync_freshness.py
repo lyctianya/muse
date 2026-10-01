@@ -10,6 +10,7 @@ from typing import Optional
 
 from fetcher.sync_registry import DAILY_COLS, JOB_TABLES, TABLE_BY_KEY, TABLES
 from fetcher import sync_status as ss
+from fetcher.trade_calendar import last_trading_day
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +64,8 @@ def needs_update(date_col: Optional[str], latest, rows: int) -> bool:
     if date_col is None:
         return False
     if date_col in DAILY_COLS:
-        return latest < today
+        # 与最近交易日比，而不是自然日：节假日休市时不误报"需要更新"
+        return latest < last_trading_day(today)
     # 季报类：覆盖到最近已结束季度即视为新鲜（Q3 中有 Q2 数据不算落后）
     q_latest = _latest_completed_quarter()
     if q_latest is not None:
