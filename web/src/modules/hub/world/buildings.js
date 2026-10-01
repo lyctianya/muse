@@ -1,5 +1,6 @@
-/* 8 栋主题建筑：纯代码低多边形，无外部模型 */
+/* 8 栋主题建筑：程序化建模 + canvas 纹理细节 */
 import { PALETTE } from './palette.js'
+import { facadeTexture, pegboardTexture, paperTexture, hazardTexture, menuTexture } from './textures.js'
 
 let THREE = null
 async function three() {
@@ -25,18 +26,23 @@ function cyl(rt, rb, h, color, x = 0, y = 0, z = 0, seg = 16) {
   return m
 }
 
-/* K 线 canvas 纹理（红涨绿跌） */
+function plane(w, h, material, x = 0, y = 0, z = 0) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), material)
+  m.position.set(x, y, z)
+  m.receiveShadow = true
+  return m
+}
+
+/* K 线 canvas（红涨绿跌） */
 function klineTexture() {
   const cv = document.createElement('canvas')
   cv.width = 512; cv.height = 288
   const ctx = cv.getContext('2d')
   ctx.fillStyle = '#1a2340'
   ctx.fillRect(0, 0, 512, 288)
-  // 网格
   ctx.strokeStyle = 'rgba(255,255,255,0.08)'
   ctx.lineWidth = 1
   for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(0, i * 48); ctx.lineTo(512, i * 48); ctx.stroke() }
-  // K 线
   let price = 150
   const bw = 18, gap = 8
   for (let i = 0; i < 18; i++) {
@@ -55,7 +61,6 @@ function klineTexture() {
     ctx.fillRect(x, top, bw, Math.max(3, bot - top))
     price = c
   }
-  // 均线
   ctx.strokeStyle = '#ffd970'
   ctx.lineWidth = 3
   ctx.beginPath()
@@ -70,7 +75,7 @@ function klineTexture() {
   return tex
 }
 
-/* 街机屏幕 canvas */
+/* 街机屏幕 */
 function arcadeTexture() {
   const cv = document.createElement('canvas')
   cv.width = 256; cv.height = 192
@@ -91,7 +96,7 @@ function arcadeTexture() {
   return tex
 }
 
-/* 相框照片 canvas */
+/* 相框照片 */
 function photoTexture() {
   const cv = document.createElement('canvas')
   cv.width = 256; cv.height = 192
@@ -116,9 +121,25 @@ export const BUILDERS = {
     await three()
     const g = new THREE.Group()
     g.add(box(5, 1, 5, PALETTE.cream, 0, 0.5, 0))
-    g.add(box(3.6, 6, 3.6, PALETTE.white, 0, 4, 0))
+    // 主楼：窗格立面
+    const facade = await facadeTexture('#f5f5f0', 0.3)
+    const tower = new THREE.Mesh(
+      new THREE.BoxGeometry(3.6, 6, 3.6),
+      new THREE.MeshStandardMaterial({ map: facade, roughness: 0.85 })
+    )
+    tower.position.set(0, 4, 0)
+    tower.castShadow = tower.receiveShadow = true
+    g.add(tower)
     for (let i = 0; i < 4; i++) g.add(box(3.7, 0.28, 3.7, PALETTE.goldDark, 0, 2.4 + i * 1.2, 0))
     g.add(box(3.9, 0.35, 3.9, PALETTE.goldDark, 0, 7.15, 0))
+    // 入口：门 + 台阶 + 雨棚
+    g.add(box(1.3, 2.1, 0.18, PALETTE.teal, 0, 1.55, 1.85))
+    g.add(box(0.12, 0.12, 0.1, PALETTE.gold, 0.4, 1.5, 1.96))
+    g.add(box(2.2, 0.25, 1.0, PALETTE.cream, 0, 0.62, 2.3))
+    g.add(box(2.6, 0.25, 1.4, PALETTE.cream, 0, 0.32, 2.5))
+    g.add(box(2.4, 0.14, 1.1, PALETTE.redDark, 0, 2.85, 2.2))
+    g.add(box(0.14, 0.7, 0.14, PALETTE.dark, -1.05, 2.5, 2.2))
+    g.add(box(0.14, 0.7, 0.14, PALETTE.dark, 1.05, 2.5, 2.2))
     // K 线牌
     const board = new THREE.Mesh(
       new THREE.PlaneGeometry(5.2, 2.9),
@@ -127,9 +148,10 @@ export const BUILDERS = {
     board.position.set(0, 9.2, 0)
     board.rotation.x = -0.12
     g.add(board)
+    g.add(box(5.4, 0.18, 0.18, PALETTE.goldDark, 0, 10.72, 0))
     g.add(box(0.25, 2.2, 0.25, PALETTE.dark, -2.2, 8, 0))
     g.add(box(0.25, 2.2, 0.25, PALETTE.dark, 2.2, 8, 0))
-    g.userData.labelY = 11.4
+    g.userData.labelY = 11.6
     return g
   },
 
@@ -138,6 +160,11 @@ export const BUILDERS = {
     await three()
     const g = new THREE.Group()
     g.add(box(3.2, 2.3, 2.6, PALETTE.teal, 0, 1.15, 0))
+    // 百叶窗
+    for (const wx of [-0.8, 0.8]) {
+      g.add(box(0.9, 1.1, 0.1, PALETTE.tealLight, wx, 1.5, 1.32))
+      for (let i = 0; i < 4; i++) g.add(box(0.9, 0.08, 0.12, PALETTE.dark, wx, 1.15 + i * 0.24, 1.32))
+    }
     // 条纹雨棚
     const awnStart = g.children.length
     for (let i = 0; i < 6; i++) {
@@ -145,17 +172,23 @@ export const BUILDERS = {
     }
     g.children.slice(awnStart).forEach((m) => { m.rotation.x = 0.28; m.position.z = 0.55; m.position.y = 2.72 })
     g.add(box(3.4, 0.18, 0.7, PALETTE.wood, 0, 1.15, 1.55))
-    // 报纸叠
     for (let i = 0; i < 3; i++) g.add(box(0.5, 0.09, 0.7, PALETTE.white, -0.9 + i * 0.85, 1.32, 1.55))
+    // 菜单板
+    const menu = plane(1.1, 0.85, new THREE.MeshBasicMaterial({ map: await menuTexture() }), -1.9, 1.7, 0.4)
+    menu.rotation.y = 0.5
+    g.add(menu)
+    g.add(box(0.12, 1.0, 0.12, PALETTE.wood, -2.15, 0.9, 0.15))
+    // 木箱
+    g.add(box(0.7, 0.7, 0.7, PALETTE.wood, 2.1, 0.35, 0.6))
+    g.add(box(0.55, 0.55, 0.55, PALETTE.wood, 2.05, 1.0, 0.55))
     // 招牌杆
     g.add(cyl(0.09, 0.09, 2.2, PALETTE.dark, 1.3, 3.3, -0.8))
-    const sign = box(1.5, 0.7, 0.12, PALETTE.gold, 1.3, 4.35, -0.8)
-    g.add(sign)
+    g.add(box(1.5, 0.7, 0.12, PALETTE.gold, 1.3, 4.35, -0.8))
     g.userData.labelY = 5.6
     return g
   },
 
-  /* 相册：大相框 */
+  /* 相册：大相框 + 红毯 + 射灯 */
   async gallery() {
     await three()
     const g = new THREE.Group()
@@ -170,22 +203,49 @@ export const BUILDERS = {
     )
     photo.position.set(0, fh / 2, 0.02)
     g.add(photo)
-    // 支腿
     const leg = box(0.3, 2.2, 0.3, PALETTE.wood, 0, 1.0, -0.9)
     leg.rotation.x = 0.5
     g.add(leg)
+    // 红毯
+    const carpet = plane(2.0, 6.5, mat(PALETTE.redDark, { roughness: 1 }), 0, 0.03, 3.6)
+    carpet.rotation.x = -Math.PI / 2
+    g.add(carpet)
+    // 射灯
+    for (const sx of [-2.6, 2.6]) {
+      g.add(cyl(0.08, 0.1, 1.6, PALETTE.dark, sx, 0.8, 1.2))
+      const lampHead = box(0.35, 0.3, 0.4, PALETTE.dark, sx, 1.75, 1.1)
+      lampHead.rotation.x = -0.5
+      g.add(lampHead)
+      const glow = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.28, 0.22),
+        new THREE.MeshBasicMaterial({ color: 0xfff4c2 })
+      )
+      glow.position.set(sx, 1.68, 1.28)
+      glow.rotation.x = -0.5
+      g.add(glow)
+    }
     g.position.y = 0.4
     g.rotation.x = -0.06
-    g.userData.labelY = 4.6
+    g.userData.labelY = 4.9
     return g
   },
 
-  /* 游戏：街机柜 */
+  /* 游戏：街机柜（霓虹招牌 + 条纹） */
   async game() {
     await three()
     const g = new THREE.Group()
     g.add(box(2.0, 3.0, 1.6, PALETTE.red, 0, 1.5, 0))
-    g.add(box(2.0, 0.55, 1.6, PALETTE.yellow, 0, 3.25, 0))
+    // 侧面条纹
+    g.add(box(0.06, 2.6, 1.2, PALETTE.yellow, -1.02, 1.5, 0))
+    g.add(box(0.06, 2.6, 1.2, PALETTE.yellow, 1.02, 1.5, 0))
+    // 霓虹招牌
+    const marquee = new THREE.Mesh(
+      new THREE.BoxGeometry(2.0, 0.55, 1.6),
+      new THREE.MeshStandardMaterial({ color: PALETTE.yellow, emissive: 0xffb300, emissiveIntensity: 0.55, roughness: 0.5 })
+    )
+    marquee.position.set(0, 3.25, 0)
+    marquee.castShadow = true
+    g.add(marquee)
     const scr = new THREE.Mesh(
       new THREE.PlaneGeometry(1.5, 1.1),
       new THREE.MeshBasicMaterial({ map: arcadeTexture() })
@@ -193,7 +253,9 @@ export const BUILDERS = {
     scr.position.set(0, 2.35, 0.82)
     scr.rotation.x = -0.15
     g.add(scr)
-    g.userData.screen = scr
+    // 投币口
+    g.add(box(0.3, 0.4, 0.06, PALETTE.dark, 0.6, 1.1, 0.82))
+    g.add(box(0.2, 0.05, 0.02, PALETTE.gold, 0.6, 1.18, 0.86))
     // 操作台
     const panel = box(2.0, 0.18, 0.9, PALETTE.redDark, 0, 1.62, 0.95)
     panel.rotation.x = 0.25
@@ -203,57 +265,80 @@ export const BUILDERS = {
     ball.position.set(-0.4, 2.16, 1.0); ball.castShadow = true
     g.add(ball)
     for (const bx of [-0.05, 0.35]) {
-      const btn = cyl(0.11, 0.11, 0.08, bx < 0.2 ? PALETTE.tealLight : PALETTE.yellow, bx, 1.82, 1.05)
-      g.add(btn)
+      g.add(cyl(0.11, 0.11, 0.08, bx < 0.2 ? PALETTE.tealLight : PALETTE.yellow, bx, 1.82, 1.05))
     }
-    g.userData.labelY = 4.6
+    g.userData.labelY = 4.7
     return g
   },
 
-  /* 工具箱：工具墙 */
+  /* 工具箱：洞洞板工具墙 */
   async tools() {
     await three()
     const g = new THREE.Group()
     g.add(box(0.35, 2.6, 0.35, PALETTE.wood, -1.7, 1.3, 0))
     g.add(box(0.35, 2.6, 0.35, PALETTE.wood, 1.7, 1.3, 0))
-    g.add(box(4.0, 2.4, 0.22, PALETTE.wood, 0, 2.0, 0))
+    const peg = new THREE.Mesh(
+      new THREE.BoxGeometry(4.0, 2.4, 0.22),
+      new THREE.MeshStandardMaterial({ map: await pegboardTexture(), roughness: 0.9 })
+    )
+    peg.position.set(0, 2.0, 0)
+    peg.castShadow = peg.receiveShadow = true
+    g.add(peg)
     // 锤子
     g.add(cyl(0.07, 0.07, 1.1, PALETTE.trunk, -1.1, 2.0, 0.2))
     g.add(box(0.5, 0.28, 0.24, PALETTE.dark, -1.1, 2.6, 0.2))
     // 螺丝刀
     g.add(cyl(0.06, 0.06, 0.9, PALETTE.red, 0, 1.95, 0.2))
     g.add(cyl(0.02, 0.09, 0.35, PALETTE.cream, 0, 2.55, 0.2))
-    // 扳手（简化）
+    // 扳手
     g.add(box(0.16, 1.0, 0.12, PALETTE.tealLight, 1.1, 1.95, 0.2))
     g.add(cyl(0.22, 0.22, 0.12, PALETTE.tealLight, 1.1, 2.55, 0.2))
-    // 钉子排
+    // 钉子排 + 卷尺
     for (let i = 0; i < 5; i++) g.add(box(0.1, 0.1, 0.14, PALETTE.goldDark, -1.5 + i * 0.75, 1.05, 0.16))
+    g.add(box(0.35, 0.35, 0.18, PALETTE.yellow, 1.55, 1.15, 0.18))
     g.userData.labelY = 4.4
     return g
   },
 
-  /* 文件：文件夹 */
+  /* 文件：文件夹 + 横线纸 */
   async files() {
     await three()
     const g = new THREE.Group()
     g.add(box(3.4, 2.4, 0.22, PALETTE.yellow, 0, 1.5, -0.15))
     g.add(box(1.1, 0.4, 0.22, PALETTE.yellow, -1.0, 2.85, -0.15))
     g.add(box(3.4, 1.9, 0.18, 0xf7dc6f, 0, 1.2, 0.12))
-    // 纸张
+    const paperMat = new THREE.MeshStandardMaterial({ map: await paperTexture(), roughness: 0.9 })
     for (let i = 0; i < 3; i++) {
-      const p = box(2.6, 1.1, 0.06, PALETTE.white, -0.2 + i * 0.25, 2.5 + i * 0.12, -0.05 + i * 0.04)
+      const p = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.1, 0.06), paperMat)
+      p.position.set(-0.2 + i * 0.25, 2.5 + i * 0.12, -0.05 + i * 0.04)
       p.rotation.z = -0.06 * i
+      p.castShadow = true
       g.add(p)
     }
+    // 标签贴
+    g.add(box(0.9, 0.35, 0.05, PALETTE.white, 0.8, 1.5, 0.24))
+    g.add(box(0.6, 0.08, 0.02, PALETTE.red, 0.8, 1.5, 0.27))
     g.userData.labelY = 4.3
     return g
   },
 
-  /* 数据更新：旋转齿轮 */
+  /* 数据更新：旋转齿轮 + 警示底座 */
   async sync() {
     await three()
     const g = new THREE.Group()
     g.add(cyl(1.3, 1.5, 0.7, PALETTE.cream, 0, 0.35, 0, 20))
+    // 警示条纹环
+    const hazard = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.52, 1.52, 0.22, 20, 1, true),
+      new THREE.MeshStandardMaterial({ map: await hazardTexture(), roughness: 0.8 })
+    )
+    hazard.position.set(0, 0.62, 0)
+    g.add(hazard)
+    // 螺栓
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4
+      g.add(cyl(0.12, 0.12, 0.12, PALETTE.dark, Math.cos(a) * 1.1, 0.76, Math.sin(a) * 1.1, 6))
+    }
     const gear = new THREE.Group()
     gear.add(cyl(1.15, 1.15, 0.45, PALETTE.tealLight, 0, 0, 0, 16))
     for (let i = 0; i < 8; i++) {
@@ -265,19 +350,38 @@ export const BUILDERS = {
     gear.add(cyl(0.4, 0.4, 0.6, PALETTE.goldDark, 0, 0, 0, 12))
     gear.position.set(0, 2.1, 0)
     g.add(gear)
-    g.userData.spin = gear // 世界主循环驱动旋转
+    g.userData.spin = gear
     g.userData.labelY = 4.2
     return g
   },
 
-  /* 用户管理：小办公室 + 钥匙 */
+  /* 用户管理：小办公室 + 钥匙 + 烟囱 */
   async users() {
     await three()
     const g = new THREE.Group()
     g.add(box(3.4, 2.6, 3.0, PALETTE.white, 0, 1.3, 0))
     g.add(box(3.7, 0.3, 3.3, PALETTE.redDark, 0, 2.75, 0))
+    // 发光窗
+    const winMat = new THREE.MeshStandardMaterial({ color: 0x9fd3ef, emissive: 0xffd970, emissiveIntensity: 0.7, roughness: 0.2 })
+    for (const wx of [-1.1, 1.1]) {
+      const win = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.12), winMat)
+      win.position.set(wx, 1.7, 1.52)
+      g.add(win)
+      g.add(box(1.0, 0.1, 0.14, PALETTE.cream, wx, 1.7, 1.52)) // 窗框十字
+      g.add(box(0.1, 1.0, 0.14, PALETTE.cream, wx, 1.7, 1.52))
+    }
+    // 门 + 雨棚 + 门垫
     g.add(box(0.9, 1.7, 0.15, PALETTE.teal, 0, 0.85, 1.52))
-    for (const wx of [-1.1, 1.1]) g.add(box(0.9, 0.9, 0.12, PALETTE.glass, wx, 1.7, 1.52, { roughness: 0.2 }))
+    g.add(box(0.12, 0.12, 0.1, PALETTE.gold, 0.28, 0.85, 1.62))
+    g.add(box(1.5, 0.12, 0.8, PALETTE.redDark, 0, 2.0, 1.8))
+    const mat1 = plane(1.1, 0.6, mat(PALETTE.red, { roughness: 1 }), 0, 0.04, 2.3)
+    mat1.rotation.x = -Math.PI / 2
+    g.add(mat1)
+    // 烟囱（烟雾粒子由主循环生成）
+    g.add(box(0.5, 1.2, 0.5, PALETTE.cream, 1.0, 3.4, -0.6))
+    g.add(box(0.66, 0.18, 0.66, PALETTE.redDark, 1.0, 4.05, -0.6))
+    g.userData.chimney = new THREE.Vector3() // 世界坐标由主循环换算
+    g.userData.chimneyLocal = { x: 1.0, y: 4.2, z: -0.6 }
     // 钥匙
     const key = new THREE.Group()
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.13, 10, 24), mat(PALETTE.gold))
@@ -289,7 +393,7 @@ export const BUILDERS = {
     key.position.set(0, 4.1, 0)
     g.add(key)
     g.userData.bob = key
-    g.userData.labelY = 5.4
+    g.userData.labelY = 5.6
     return g
   },
 }

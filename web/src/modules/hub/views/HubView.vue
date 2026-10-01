@@ -1,7 +1,19 @@
 <template>
   <div class="hub">
+    <!-- 开场遮罩（点击后才初始化世界 + 解锁音频） -->
+    <div v-if="!started && !fallback" class="hub-intro">
+      <div class="hub-intro-card">
+        <div class="hub-intro-logo">Muse</div>
+        <div class="hub-intro-title">3D 世界</div>
+        <p class="hub-intro-desc">开上小吉普，去逛逛你的数据王国吧</p>
+        <a-button type="primary" size="large" shape="round" :loading="loading" @click="startWorld">
+          进入世界 ▶
+        </a-button>
+        <p class="hub-intro-keys">WASD 开车 · 空格跳跃 · H 喇叭 · Shift 加速</p>
+      </div>
+    </div>
     <!-- 加载中 -->
-    <div v-if="loading" class="hub-loading">
+    <div v-if="started && loading" class="hub-loading">
       <a-spin size="large" tip="正在建造 3D 世界…" />
     </div>
     <!-- WebGL 不可用时的回退 -->
@@ -46,7 +58,7 @@
     <!-- 底部提示 -->
     <div v-if="!fallback && !selected" class="hub-hint">
       {{ mode === 'drive'
-        ? 'WASD / 方向键开车 · Shift 加速 · 空格刹车 · R 回起点 · 靠近建筑自动弹出'
+        ? 'WASD 开车 · 空格跳跃 · H 喇叭 · Shift 加速 · B 刹车 · R 回起点 · 靠近建筑自动弹出'
         : '拖拽旋转 · 滚轮缩放 · 点击建筑进入对应模块' }}
     </div>
 
@@ -58,6 +70,17 @@
     <!-- 触屏摇杆（开车模式） -->
     <div v-if="!fallback && mode === 'drive' && isTouch" ref="joyBase" class="hub-joy" @pointerdown="joyDown" @pointermove="joyMove" @pointerup="joyUp" @pointercancel="joyUp">
       <div class="hub-joy-knob" :style="joyStyle" />
+    </div>
+
+    <!-- 成就提示 -->
+    <div class="hub-toasts">
+      <div v-for="a in toasts" :key="a.id" class="hub-toast">
+        <span class="hub-toast-icon">{{ a.icon }}</span>
+        <div>
+          <div class="hub-toast-title">🏆 {{ a.title }}</div>
+          <div class="hub-toast-desc">{{ a.desc }}</div>
+        </div>
+      </div>
     </div>
 
     <!-- 选中模块卡片 -->
@@ -76,6 +99,7 @@
 
 <script setup>
 import { createHub, MODULES } from '../world/index.js'
+import { initAudio } from '../world/audio.js'
 import { authState, hasPerm, logout, loadUser } from '../../../platform/utils/auth.js'
 import { fmtDateLocal } from '../../../platform/utils/date.js'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
@@ -84,10 +108,12 @@ import { IconUser, IconRefresh } from '@arco-design/web-vue/es/icon'
 
 const router = useRouter()
 const stage = ref(null)
-const loading = ref(true)
+const started = ref(false)
+const loading = ref(false)
 const fallback = ref(false)
 const selected = ref(null)
 const mode = ref('drive')
+const toasts = ref([])
 const isTouch = 'ontouchstart' in window
 const joyBase = ref(null)
 const joyStyle = ref({})
@@ -153,6 +179,12 @@ function joyUp(e) {
 
 onMounted(async () => {
   if (!authState.loaded) await loadUser()
+})
+
+async function startWorld() {
+  started.value = true
+  loading.value = true
+  initAudio() // 用户手势内初始化音频
   try {
     hub = await createHub(stage.value, {
       modules: visibleModules.value,
@@ -161,6 +193,10 @@ onMounted(async () => {
         if (mode.value === 'orbit') hub.focusTo(mod.id)
       },
       onDeselect: () => { selected.value = null },
+      onAchievement: (a) => {
+        toasts.value.push(a)
+        setTimeout(() => { toasts.value = toasts.value.filter((x) => x.id !== a.id) }, 3500)
+      },
     })
   } catch (e) {
     console.error('3D 初始化失败', e)
@@ -168,7 +204,7 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
 
 onBeforeUnmount(() => {
   hub && hub.destroy()
@@ -211,6 +247,38 @@ onBeforeUnmount(() => {
 .hub-card :deep(.arco-card) { border-radius: 14px; border: 2px solid #d3a24a; box-shadow: 0 8px 30px rgba(26,35,64,0.25); }
 .hub-card-title { font-size: 20px; font-weight: 700; color: #1a2340; }
 .hub-card-desc { font-size: 13px; color: #86909c; margin-top: 4px; }
+.hub-intro {
+  position: absolute; inset: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, #7fb8dd 0%, #a8d8f0 55%, #cfe8b8 100%);
+}
+.hub-intro-card { text-align: center; padding: 40px; }
+.hub-intro-logo {
+  display: inline-block; font-size: 44px; font-weight: 800; color: #1a2340;
+  background: #fff; padding: 10px 28px; border-radius: 16px;
+  border: 3px solid #d3a24a; box-shadow: 0 10px 30px rgba(26,35,64,0.2);
+}
+.hub-intro-title { font-size: 30px; font-weight: 700; color: #1a2340; margin-top: 18px; }
+.hub-intro-desc { font-size: 15px; color: #3d4a6b; margin: 10px 0 24px; }
+.hub-intro-keys { font-size: 12px; color: #5a6b7d; margin-top: 18px; }
+.hub-toasts {
+  position: absolute; left: 20px; bottom: 70px; z-index: 12;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.hub-toast {
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(26,35,64,0.88); color: #fff;
+  border: 1px solid #d3a24a; border-radius: 12px; padding: 10px 16px;
+  animation: hub-toast-in 0.3s ease-out;
+  max-width: 300px;
+}
+@keyframes hub-toast-in {
+  from { transform: translateX(-30px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.hub-toast-icon { font-size: 26px; }
+.hub-toast-title { font-size: 14px; font-weight: 700; color: #ffd970; }
+.hub-toast-desc { font-size: 12px; color: #c9d1e0; }
 .hub-modes { background: rgba(255,255,255,0.85); border-radius: 8px; padding: 2px; }
 .hub-respawn {
   position: absolute; bottom: 22px; right: 20px; z-index: 10;

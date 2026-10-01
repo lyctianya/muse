@@ -3,6 +3,10 @@ import { PALETTE, MODULE_STYLE } from './palette.js'
 import { BUILDERS } from './buildings.js'
 import { makeLabel } from './labels.js'
 import { buildJeep, createCar } from './car.js'
+import { makeRoads, makeLamps, makeNature, makeSignposts, makeLake, makeFlowerBeds } from './dressing.js'
+import { createParticles } from './particles.js'
+import { initAudio, engineUpdate, honk as honkSound, ding, boing, thud } from './audio.js'
+import { createTracker } from './achievements.js'
 
 export const MODULES = [
   { id: 'stock', title: '股票', desc: '市场概览 · 行情 · 选股', route: '/market', perm: 'market:view' },
@@ -81,25 +85,16 @@ export async function createHub(container, hooks = {}) {
   museLabel.position.set(0, 6.4, 0)
   scene.add(museLabel)
 
-  // 道路（中心到每栋建筑）
-  const roadMat = new THREE.MeshStandardMaterial({ color: PALETTE.road, roughness: 1 })
   const modules = hooks.modules || MODULES
-  modules.forEach((m, i) => {
-    const a = (i / modules.length) * Math.PI * 2 + Math.PI / modules.length
-    const len = RADIUS - 4.6
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(2.6, len), roadMat)
-    road.rotation.x = -Math.PI / 2
-    road.rotation.z = -a + Math.PI / 2
-    const mid = 4.6 + len / 2
-    road.position.set(Math.cos(a) * mid, 0.03, Math.sin(a) * mid)
-    road.receiveShadow = true
-    scene.add(road)
-  })
+
+  // 道路（纹理柏油路 + 中央虚线）
+  await makeRoads(scene, modules, RADIUS)
 
   // 建筑
   const pickables = []
   const solids = [] // 用于生成物理碰撞体（不含悬浮标签）
   const zonePts = [] // 触发区：建筑位置
+  const chimneys = [] // 烟囱冒烟：{ wrap, local }
   const labels = []
   const spinners = []
   const bobbers = []
@@ -126,6 +121,7 @@ export async function createHub(container, hooks = {}) {
     labels.push({ sp: label, baseY: label.position.y, phase: Math.random() * 6 })
     if (g.userData.spin) spinners.push(g.userData.spin)
     if (g.userData.bob) bobbers.push({ o: g.userData.bob, baseY: g.userData.bob.position.y, phase: Math.random() * 6 })
+    if (g.userData.chimneyLocal) chimneys.push({ wrap, gpos: { x: g.position.x, y: g.position.y, z: g.position.z }, local: g.userData.chimneyLocal })
     g.traverse((o) => { o.userData.moduleId = m.id })
     scene.add(wrap)
     pickables.push(wrap)
@@ -194,6 +190,20 @@ export async function createHub(container, hooks = {}) {
   pond.receiveShadow = true
   scene.add(pond)
 
+  /* ---------- 世界装饰 ---------- */
+  await makeLamps(scene, modules, RADIUS)
+  await makeNature(scene, [...zonePts, { x: 0, z: 0 }, { x: 21, z: 13 }])
+  await makeSignposts(scene, modules, RADIUS)
+  await makeLake(scene)
+  await makeFlowerBeds(scene)
+
+  /* ---------- 粒子 + 成就 ---------- */
+  const particles = await createParticles(scene)
+  const tracker = createTracker((a) => {
+    if (hooks.onAchievement) hooks.onAchievement(a)
+    ding()
+  })
+
   /* ---------- Rapier 物理 ---------- */
   const rapierMod = await import('@dimforge/rapier3d-compat')
   const RAPIER = rapierMod.default
@@ -236,13 +246,23 @@ export async function createHub(container, hooks = {}) {
   }
 
   /* ---------- 输入（键盘 + 摇杆） ---------- */
-  const input = { throttle: 0, steer: 0, brake: false, boost: false, joyThrottle: 0, joySteer: 0 }
+  const input = { throttle: 0, steer: 0, brake: false, boost: false, joyThrottle: 0, joySteer: 0, jump: false }
   const keys = new Set()
   const clamp01 = (v) => Math.max(-1, Math.min(1, v))
+  let honkT = 0
+  function doHonk() {
+    honkSound()
+    jeep.bubble.visible = true
+    honkT = 0.9
+    tracker.honk()
+  }
   function onKeyDown(e) {
     const k = e.key.toLowerCase()
     if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault()
-    if (k === 'r' && mode === 'drive') car.respawn()
+    if (mode !== 'drive') { keys.add(k); return }
+    if (k === 'r') car.respawn()
+    if (k === ' ') input.jump = true
+    if (k === 'h') doHonk()
     keys.add(k)
   }
   function onKeyUp(e) { keys.delete(e.key.toLowerCase()) }
@@ -255,7 +275,7 @@ export async function createHub(container, hooks = {}) {
     const right = keys.has('d') || keys.has('arrowright')
     input.throttle = clamp01((up ? 1 : 0) + (down ? -0.65 : 0) + input.joyThrottle)
     input.steer = clamp01((right ? 1 : 0) + (left ? -1 : 0) + input.joySteer)
-    input.brake = keys.has(' ')
+    input.brake = keys.has('b') || keys.has('control')
     input.boost = keys.has('shift')
   }
 
@@ -290,6 +310,8 @@ export async function createHub(container, hooks = {}) {
       zoneId = best
       if (best) {
         const mod = modules.find((m) => m.id === best)
+        tracker.visit(best)
+        if (tracker.visitedCount() === modules.length) tracker.unlock('tourist')
         if (mod && hooks.onSelect) hooks.onSelect(mod)
       } else if (hooks.onDeselect) hooks.onDeselect()
     }
@@ -440,7 +462,10 @@ export async function createHub(container, hooks = {}) {
   const STEP = 1 / 60
   const ZERO_INPUT = { throttle: 0, steer: 0, brake: false, boost: false }
   const _chase = new THREE.Vector3()
+  const _v3 = new THREE.Vector3()
   let acc = 0
+  let dustAcc = 0
+  let smokeAcc = 0
   let raf = 0
   let destroyed = false
   function loop() {
@@ -450,15 +475,40 @@ export async function createHub(container, hooks = {}) {
     if (mode === 'drive') {
       pollKeys()
       acc += dt
-      let n = 0
-      while (acc >= STEP && n < 4) { car.step(STEP, input); phys.step(); acc -= STEP; n++ }
+      let n = 0, ev = null
+      while (acc >= STEP && n < 4) { ev = car.step(STEP, input); phys.step(); acc -= STEP; n++ }
+      const cp = car.pos
+      if (ev) {
+        if (ev.jumped) { boing(); tracker.unlock('first_jump') }
+        if (ev.landed) { thud(); particles.burst(cp.x, 0.3, cp.z, 8) }
+        if (ev.crashed) {
+          thud(); tracker.unlock('crash')
+          particles.burst(cp.x, 0.9, cp.z, 10, { vy: 2.5, size: 1.1 })
+        }
+      }
+      const spd = Math.abs(car.speed)
+      if (spd > 3) tracker.unlock('first_drive')
+      if (car.speed > 15) tracker.unlock('speed')
+      // 尘土
+      dustAcc += dt
+      if (spd > 6 && dustAcc > 0.06) {
+        dustAcc = 0
+        const yaw = car.yaw
+        const fx = Math.sin(yaw), fz = Math.cos(yaw)
+        const drift = Math.abs(input.steer) > 0.55 && spd > 8
+        particles.spawn(
+          cp.x - fx * 1.7 + (Math.random() - 0.5), 0.35, cp.z - fz * 1.7 + (Math.random() - 0.5),
+          { vx: -fx * 2, vy: 1.2 + Math.random(), vz: -fz * 2, life: 0.7, size: drift ? 1.1 : 0.75 }
+        )
+      }
       checkZone()
+      engineUpdate(Math.min(1, spd / 17), input.boost, true)
       // 追踪镜头
-      const p = car.pos, yaw = car.yaw
+      const yaw = car.yaw
       const fx = Math.sin(yaw), fz = Math.cos(yaw)
-      _chase.set(p.x - fx * chaseDist, 5.2, p.z - fz * chaseDist)
+      _chase.set(cp.x - fx * chaseDist, 5.2, cp.z - fz * chaseDist)
       camera.position.lerp(_chase, 1 - Math.exp(-4.5 * dt))
-      camera.lookAt(p.x + fx * 4, 1.7, p.z + fz * 4)
+      camera.lookAt(cp.x + fx * 4, 1.7, cp.z + fz * 4)
     } else {
       if (autoRotate && !dragging) {
         orbit.goalTheta += dt * 0.06
@@ -468,7 +518,22 @@ export async function createHub(container, hooks = {}) {
       acc += dt
       let n = 0
       while (acc >= STEP && n < 4) { car.step(STEP, ZERO_INPUT); phys.step(); acc -= STEP; n++ }
+      engineUpdate(0, false, false)
     }
+    // 喇叭气泡计时
+    if (honkT > 0) { honkT -= dt; if (honkT <= 0) jeep.bubble.visible = false }
+    // 烟囱冒烟
+    smokeAcc += dt
+    if (smokeAcc > 0.4) {
+      smokeAcc = 0
+      for (const c of chimneys) {
+        _v3.set(c.local.x + c.gpos.x, c.local.y + c.gpos.y, c.local.z + c.gpos.z)
+        c.wrap.localToWorld(_v3)
+        particles.spawn(_v3.x, _v3.y, _v3.z,
+          { vy: 1.7, vx: 0.35, vz: 0.1, life: 1.7, size: 0.55, opacity: 0.32, color: 0xececec, grow: 1.7 })
+      }
+    }
+    particles.update(dt)
     // 云漂移
     for (const c of clouds) {
       c.g.position.x += c.v * dt
