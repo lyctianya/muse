@@ -39,14 +39,22 @@ export function groundHeightAt(x, z) {
   return h00 * (1 - tx) * (1 - tz) + h10 * tx * (1 - tz) + h01 * (1 - tx) * tz + h11 * tx * tz
 }
 
-/* 按 refs 摆 visual 模板 */
-async function instanceFromRefs(scene, visualPath, refsPath, namePrefix) {
+/* 按 refs 摆 visual 模板；matFor(name) 可覆盖材质（调色板 UV 在 Draco 下不稳定时用纯色） */
+async function instanceFromRefs(scene, visualPath, refsPath, namePrefix, matFor = null) {
   const visual = await loadGLB(visualPath)
   const refs = await loadGLB(refsPath)
   let count = 0
   refs.traverse((o) => {
     if (!o.isMesh && o.name && o.name.startsWith(namePrefix)) {
       const inst = visual.clone(true)
+      if (matFor) {
+        inst.traverse((m) => {
+          if (m.isMesh) {
+            const mat = matFor(m.name)
+            if (mat) m.material = mat
+          }
+        })
+      }
       inst.position.copy(o.position)
       inst.quaternion.copy(o.quaternion)
       inst.scale.copy(o.scale)
@@ -58,15 +66,28 @@ async function instanceFromRefs(scene, visualPath, refsPath, namePrefix) {
   return count
 }
 
+/* 树的纯色材质（按名称区分树干/树叶） */
+function treeMaterials(trunkColor, leafColor) {
+  const trunk = new THREE.MeshStandardMaterial({ color: trunkColor, roughness: 0.9 })
+  const leaf = new THREE.MeshStandardMaterial({ color: leafColor, roughness: 0.9 })
+  return (name) => {
+    if (!name) return null
+    const n = name.toLowerCase()
+    if (n.includes('body') || n.includes('trunk')) return trunk
+    if (n.includes('leav')) return leaf
+    return null
+  }
+}
+
 export async function loadBrunoWorld(scene) {
-  // 地形：贴原站地形纹理
+  // 地形：贴原站地形纹理（贴图自带手绘色彩，用无光照材质避免被灯光推成霓虹色）
   const terrain = await loadGLB('/hub/world/terrain.glb')
   {
     const tex = await new THREE.TextureLoader().loadAsync('/hub/world/terrain.png')
     tex.colorSpace = THREE.SRGBColorSpace
     terrain.traverse((o) => {
       if (o.isMesh) {
-        o.material = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0 })
+        o.material = new THREE.MeshBasicMaterial({ map: tex })
         o.receiveShadow = true
       }
     })
@@ -77,13 +98,19 @@ export async function loadBrunoWorld(scene) {
   const scenery = await loadGLB('/hub/world/scenery.glb')
   scene.add(scenery)
 
-  // 树木
-  const nb = await instanceFromRefs(scene, '/hub/world/birchVisual.glb', '/hub/world/birchRefs.glb', 'treeBody')
-  const no = await instanceFromRefs(scene, '/hub/world/oakVisual.glb', '/hub/world/oakRefs.glb', 'treeBody')
-  const nc = await instanceFromRefs(scene, '/hub/world/cherryVisual.glb', '/hub/world/cherryRefs.glb', 'treeBody')
+  // 树木（纯色材质，绕开 Draco 下不稳定的调色板 UV）
+  const nb = await instanceFromRefs(scene, '/hub/world/birchVisual.glb', '/hub/world/birchRefs.glb', 'treeBody',
+    treeMaterials(0xe8e0d0, 0x86c860))
+  const no = await instanceFromRefs(scene, '/hub/world/oakVisual.glb', '/hub/world/oakRefs.glb', 'treeBody',
+    treeMaterials(0x8b5a2b, 0x4a9c4a))
+  const nc = await instanceFromRefs(scene, '/hub/world/cherryVisual.glb', '/hub/world/cherryRefs.glb', 'treeBody',
+    treeMaterials(0x8b5a2b, 0xff9990))
 
-  // 灌木 / 花：自带几何与坐标
-  scene.add(await loadGLB('/hub/world/bushesRefs.glb'))
+  // 灌木 / 花：自带几何与坐标；灌木无材质，给绿色
+  const bushes = await loadGLB('/hub/world/bushesRefs.glb')
+  const bushMat = new THREE.MeshStandardMaterial({ color: 0x3f9142, roughness: 0.9 })
+  bushes.traverse((o) => { if (o.isMesh) o.material = bushMat })
+  scene.add(bushes)
   scene.add(await loadGLB('/hub/world/flowersRefs.glb'))
 
   console.log(`[hub] 世界加载完成：建筑群 + 地形 + ${nb + no + nc} 棵树 + 灌木花丛`)
