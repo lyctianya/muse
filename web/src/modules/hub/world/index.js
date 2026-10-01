@@ -47,6 +47,8 @@ export async function createHub(container, hooks = {}) {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
   renderer.shadowMap.enabled = true
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
+  renderer.toneMapping = THREE.ACESFilmicToneMapping
+  renderer.toneMappingExposure = 1.15
   container.appendChild(renderer.domElement)
 
   const scene = new THREE.Scene()
@@ -55,9 +57,9 @@ export async function createHub(container, hooks = {}) {
 
   const camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 600)
 
-  // 灯光
-  scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x9aa86b, 0.95))
-  const sun = new THREE.DirectionalLight(0xfff1d6, 1.7)
+  // 灯光（物理光照模式，需较高强度）
+  scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x9aa86b, 1.6))
+  const sun = new THREE.DirectionalLight(0xfff1d6, 2.8)
   sun.position.set(22, 30, 14)
   sun.castShadow = true
   sun.shadow.mapSize.set(2048, 2048)
