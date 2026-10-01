@@ -4,6 +4,12 @@ import { makeLabel } from './labels.js'
 import { buildJeep, createCar, createTireTracks } from './car.js'
 import { loadBrunoWorld, BUILDING_POS, WORLD_SPAWN, loadHeightGrid, groundHeightAt } from './brunoWorld.js'
 import { createParticles } from './particles.js'
+import { createDayNight } from './dayNight.js'
+import { createFallingLeaves } from './fallingLeaves.js'
+import { createGrass } from './grass.js'
+import { createWater } from './water.js'
+import { createWeather } from './weather.js'
+import { createSeasons } from './seasons.js'
 import { initAudio, engineUpdate, honk as honkSound, ding, boing, thud } from './audio.js'
 import { createTracker } from './achievements.js'
 
@@ -58,7 +64,8 @@ export async function createHub(container, hooks = {}) {
   const camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 600)
 
   // 灯光（物理光照模式，需较高强度）
-  scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x9aa86b, 1.6))
+  const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x9aa86b, 1.6)
+  scene.add(hemi)
   const sun = new THREE.DirectionalLight(0xfff1d6, 2.8)
   sun.position.set(22, 30, 14)
   sun.castShadow = true
@@ -68,9 +75,32 @@ export async function createHub(container, hooks = {}) {
   sun.shadow.camera.far = 120
   sun.shadow.bias = -0.0004
   scene.add(sun)
+  // 日夜循环（原站 Lighting）
+  const dayNight = createDayNight(scene, sun, hemi)
 
   /* ---------- 原站完整世界（地形/建筑/树木/灌木/花） ---------- */
   const { treePositions } = await loadBrunoWorld(scene)
+
+  // 落叶（原站 Leaves）
+  const fallingLeaves = createFallingLeaves(scene, treePositions || [])
+
+  // 草地（原站 Grass）
+  const grass = createGrass(scene)
+
+  // 水面（原站 Water）- 小池塘
+  const water = createWater(scene, { x: -30, z: -35, size: 25, y: 0.15 })
+
+  // 天气（原站 Weather）- 默认关闭
+  const weather = createWeather(scene)
+
+  // 季节（原站 Seasons）
+  const seasons = createSeasons()
+  // 季节切换时更新草地颜色
+  seasons.onChange((cfg) => {
+    if (grass.mesh) {
+      grass.mesh.material.color.setHex(cfg.grass)
+    }
+  })
 
   const modules = hooks.modules || MODULES
 
@@ -491,6 +521,13 @@ export async function createHub(container, hooks = {}) {
     // 喇叭气泡计时
     if (honkT > 0) { honkT -= dt; if (honkT <= 0) jeep.bubble.visible = false }
     particles.update(dt)
+    dayNight.update(dt)
+    fallingLeaves.update(dt)
+    grass.update(t)
+    water.update(t)
+    // 天气跟随车辆
+    weather.setCenter(cp.x, cp.z)
+    weather.update(dt)
     // 云漂移
     for (const c of clouds) {
       c.g.position.x += c.v * dt
@@ -520,6 +557,14 @@ export async function createHub(container, hooks = {}) {
     getMode: () => mode,
     respawn: () => car.respawn(),
     setPaint: (name) => car.setPaint(name),
+    // 天气/日夜控制（原站 Weather/Lighting）
+    setRain: (v) => weather.setEnabled(v),
+    isRaining: () => weather.isEnabled(),
+    setDayNight: (v) => dayNight.setEnabled(v),
+    setTimeOfDay: (t) => dayNight.setTime(t),
+    // 季节（原站 Seasons）
+    setSeason: (name) => seasons.setSeason(name),
+    getSeason: () => seasons.getCurrent(),
     input, // 摇杆写入 joyThrottle / joySteer
     destroy() {
       destroyed = true

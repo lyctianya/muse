@@ -54,6 +54,20 @@
           <a-doption value="abyssal">🌌 深渊</a-doption>
         </template>
       </a-dropdown>
+      <!-- 天气/时间（原站 Weather/Lighting） -->
+      <a-button v-if="started && !loading" size="small" shape="round" @click="onToggleRain">
+        {{ raining ? '🌧️ 雨中' : '🌤️ 晴' }}
+      </a-button>
+      <!-- 季节（原站 Seasons） -->
+      <a-dropdown v-if="started && !loading" @select="onSeasonSelect">
+        <a-button size="small" shape="round">🍂 {{ seasonName }}</a-button>
+        <template #content>
+          <a-doption value="spring">🌸 春</a-doption>
+          <a-doption value="summer">☀️ 夏</a-doption>
+          <a-doption value="autumn">🍁 秋</a-doption>
+          <a-doption value="winter">❄️ 冬</a-doption>
+        </template>
+      </a-dropdown>
       <div class="hub-user">
         <a-tag color="gold">{{ today }}</a-tag>
         <a-button size="small" shape="circle" :title="muted ? '取消静音' : '静音'" @click="onToggleMute">
@@ -145,6 +159,24 @@ const PAINT_NAMES = { red: '红色', orange: '橙色', white: '白色', black: '
 function onPaintSelect(v) {
   if (hub && hub.setPaint(v)) {
     paintName.value = PAINT_NAMES[v] || v
+  }
+}
+
+// 天气（原站 Weather）
+const raining = ref(false)
+function onToggleRain() {
+  if (hub) {
+    raining.value = !raining.value
+    hub.setRain(raining.value)
+  }
+}
+
+// 季节（原站 Seasons）
+const seasonName = ref('夏')
+const SEASON_NAMES = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' }
+function onSeasonSelect(v) {
+  if (hub && hub.setSeason(v)) {
+    seasonName.value = SEASON_NAMES[v] || v
   }
 }
 
