@@ -98,17 +98,18 @@ export async function loadBrunoWorld(scene) {
   const scenery = await loadGLB('/hub/world/scenery.glb')
   scene.add(scenery)
 
-  // 树木（纯色材质，绕开 Draco 下不稳定的调色板 UV）
+  // 树木：原站 Trees 传入 colorA/colorB（非调色板），纯色 1:1 还原
+  // 白桦 #ff4f2b/#ff903f（橙），橡树 #b4b536/#d8cf3b（橄榄绿），樱桃 #ff6d6d/#ff9990（粉）
   const nb = await instanceFromRefs(scene, '/hub/world/birchVisual.glb', '/hub/world/birchRefs.glb', 'treeBody',
-    treeMaterials(0xe8e0d0, 0x86c860))
+    treeMaterials(0xe8e0d0, 0xff6a35))
   const no = await instanceFromRefs(scene, '/hub/world/oakVisual.glb', '/hub/world/oakRefs.glb', 'treeBody',
-    treeMaterials(0x8b5a2b, 0x4a9c4a))
+    treeMaterials(0x8b5a2b, 0xc4c43a))
   const nc = await instanceFromRefs(scene, '/hub/world/cherryVisual.glb', '/hub/world/cherryRefs.glb', 'treeBody',
-    treeMaterials(0x8b5a2b, 0xff9990))
+    treeMaterials(0x8b5a2b, 0xff7d7d))
 
-  // 灌木 / 花：自带几何与坐标；灌木无材质，给绿色
+  // 灌木：原站 Bushes 用 #b4b536/#d8cf3b（橄榄绿，和橡树同色）
   const bushes = await loadGLB('/hub/world/bushesRefs.glb')
-  const bushMat = new THREE.MeshStandardMaterial({ color: 0x3f9142, roughness: 0.9 })
+  const bushMat = new THREE.MeshStandardMaterial({ color: 0xc4c43a, roughness: 0.9 })
   bushes.traverse((o) => { if (o.isMesh) o.material = bushMat })
   scene.add(bushes)
   scene.add(await loadGLB('/hub/world/flowersRefs.glb'))
