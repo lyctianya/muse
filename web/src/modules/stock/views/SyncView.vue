@@ -6,7 +6,7 @@
         <span><icon-sync spin style="margin-right: 6px" />同步任务运行中：{{ runningJob.table_name }}</span>
       </template>
       <div style="margin-bottom: 8px; color: #86909c; font-size: 12px">
-        任务 {{ runningJob.job_id }} · 开始于 {{ runningJob.started_at }} · 日志每 3 秒刷新
+        任务 {{ runningJob.job_id }} · 开始于 {{ fmtDT(runningJob.started_at) }} · 日志每 3 秒刷新
       </div>
       <a-textarea :model-value="runningJob.log_tail || '等待日志输出…'" readonly
                   :auto-size="{ minRows: 8, maxRows: 16 }"
@@ -44,7 +44,7 @@
               <template #cell="{ record }">{{ record.latest_date || '--' }}</template>
             </a-table-column>
             <a-table-column title="上次同步" :width="170">
-              <template #cell="{ record }">{{ record.last_synced_at || '--' }}</template>
+              <template #cell="{ record }">{{ fmtDT(record.last_synced_at) }}</template>
             </a-table-column>
             <a-table-column title="状态" :width="130">
               <template #cell="{ record }">
@@ -83,9 +83,11 @@
               <a-tag v-else color="red">失败</a-tag>
             </template>
           </a-table-column>
-          <a-table-column title="开始" data-index="started_at" :width="180" />
+          <a-table-column title="开始" :width="180">
+            <template #cell="{ record }">{{ fmtDT(record.started_at) }}</template>
+          </a-table-column>
           <a-table-column title="结束" :width="180">
-            <template #cell="{ record }">{{ record.finished_at || '--' }}</template>
+            <template #cell="{ record }">{{ fmtDT(record.finished_at) }}</template>
           </a-table-column>
         </template>
         <template #expand-row="{ record }">
@@ -101,6 +103,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { getJSON, postJSON } from '../../../platform/utils/api.js'
+import { fmtDateTimeLocal as fmtDT } from '../../../platform/utils/date.js'
 
 const groups = ['行情', '基本面', '增量', '全量接口']
 const status = ref([])
