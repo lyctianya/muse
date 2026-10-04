@@ -2,7 +2,6 @@ import { Events } from './Events.js'
 import { Game } from './Game.js'
 import { Inputs } from './Inputs/Inputs.js'
 import { Tabs } from './Tabs.js'
-import { CircuitArea } from './World/Areas/CircuitArea.js'
 
 export class Menu
 {
@@ -21,7 +20,6 @@ export class Menu
         this.default = null
         this.events = new Events()
 
-        this.setTrigger()
         this.setClose()
         this.setItems()
         this.setGamepad()
@@ -48,25 +46,6 @@ export class Menu
             
             this.element.classList.remove('is-displayed')
         }
-    }
-
-    setTrigger()
-    {
-        const element = document.querySelector('.js-menu-trigger')
-
-        element.addEventListener('click', (event) =>
-        {
-            event.preventDefault()
-
-            if(this.game.world.areas?.circuit?.state === CircuitArea.STATE_RUNNING || this.game.world.areas?.circuit?.state === CircuitArea.STATE_STARTING)
-                this.open('circuit')
-            else
-                this.open()
-        })
-        element.addEventListener('keydown', (event) =>
-        {
-            event.preventDefault()
-        })
     }
 
     setClose()

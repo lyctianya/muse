@@ -265,7 +265,6 @@ export class SocialArea extends Area
                 )
                 
                 // Buttons
-                document.querySelector('.js-menu-trigger').style.display = 'none'
                 document.querySelector('.js-map-trigger').style.display = 'none'
             }
         })
