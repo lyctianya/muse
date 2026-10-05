@@ -237,6 +237,9 @@ export class MusePortalsArea
       case 'game':
         this.buildGame(group, accent)
         break
+      case 'news':
+        this.buildNews(group, accent)
+        break
       case 'tools':
         this.buildTools(group, accent)
         break
@@ -305,6 +308,17 @@ export class MusePortalsArea
     group.add(this.mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.25, 8), this.materials.board, [-0.25, 1.0, 0.5]))
     group.add(this.mesh(new THREE.SphereGeometry(0.1, 8, 8), accent, [-0.25, 1.15, 0.5]))
     group.add(this.mesh(new THREE.BoxGeometry(0.18, 0.08, 0.18), this.materials.board, [0.25, 0.95, 0.52]))
+  }
+
+  buildNews(group, accent)
+  {
+    // Newsstand + papers
+    group.add(this.mesh(new THREE.BoxGeometry(1.5, 1.1, 0.7), this.materials.dark, [0, 0.55, 0]))
+    group.add(this.mesh(new THREE.BoxGeometry(1.6, 0.1, 0.8), this.materials.postCap, [0, 1.15, 0]))
+    group.add(this.mesh(new THREE.BoxGeometry(1.2, 0.7, 0.06), accent, [0, 1.6, -0.05]))
+    group.add(this.mesh(new THREE.BoxGeometry(0.55, 0.02, 0.7), this.materials.paper, [-0.35, 1.22, 0.15], [0, 0.15, 0.08]))
+    group.add(this.mesh(new THREE.BoxGeometry(0.55, 0.02, 0.7), this.materials.paper, [0.35, 1.22, 0.15], [0, -0.1, -0.06]))
+    group.add(this.mesh(new THREE.BoxGeometry(0.35, 0.45, 0.08), this.materials.board, [0.7, 0.7, 0.35]))
   }
 
   buildTools(group, accent)

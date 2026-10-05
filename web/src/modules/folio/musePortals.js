@@ -14,6 +14,7 @@ export const MUSE_PORTALS = [
   { id: 'blog', title: '博客', route: '/blog', perm: 'blog:view', theme: 'blog', accent: '#2f9e5a' },
   { id: 'gallery', title: '相册', route: '/gallery', perm: 'gallery:view', theme: 'gallery', accent: '#8b5cf6' },
   { id: 'game', title: '游戏', route: '/game', perm: 'game:view', theme: 'game', accent: '#d97706' },
+  { id: 'news60s', title: '60秒新闻', route: '/60s', perm: 'news60s:view', theme: 'news', accent: '#d3a24a' },
   { id: 'tools', title: '工具', route: '/tools', perm: 'tools:use', theme: 'tools', accent: '#0e8a9a' },
   { id: 'files', title: '文件', route: '/files', perm: 'files:view', theme: 'files', accent: '#6b7280' },
   { id: 'sync', title: '数据更新', route: '/sync', perm: 'sync:view', theme: 'sync', accent: '#c2410c' },

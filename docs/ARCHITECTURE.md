@@ -22,6 +22,7 @@ stock-data/                      # 仓库根（GitHub: lyctianya/muse）
 │       ├── blog/                # 博客域：文章/标签（Markdown）
 │       ├── gallery/             # 相册域：相册/照片（文件走平台存储）
 │       ├── game/                # 游戏域：three.js 游戏 + 排行榜
+│       ├── news60s/             # 60秒新闻：上游同步 + 按日查询
 │       └── agent/               # 规划中（AI agent，留空位）
 │
 │   注：tools 工具箱是纯前端模块（v1 无需后端），只有 web/src/modules/tools/。
@@ -52,6 +53,7 @@ stock-data/                      # 仓库根（GitHub: lyctianya/muse）
 | `/api/blog/*` | 博客域 | `blog:view` / `blog:manage` |
 | `/api/gallery/*` | 相册域 | `gallery:view` / `gallery:upload` / `gallery:manage` |
 | `/api/game/*` | 游戏域 | `game:view` |
+| `/api/news60s/*` | 60秒新闻 | `news60s:view` / `news60s:sync` |
 
 新域统一用 `/api/<domain>/*`。
 

@@ -18,6 +18,7 @@ import GalleryView from '../../modules/gallery/views/GalleryView.vue'
 import AlbumView from '../../modules/gallery/views/AlbumView.vue'
 import GameView from '../../modules/game/views/GameView.vue'
 import ToolsView from '../../modules/tools/views/ToolsView.vue'
+import News60sView from '../../modules/news60s/views/News60sView.vue'
 import HubView from '../../modules/hub/views/HubView.vue'
 import { authState, hasPerm, loadUser } from '../../platform/utils/auth.js'
 
@@ -45,6 +46,7 @@ const router = createRouter({
     { path: '/gallery/:id', name: 'album', component: AlbumView, meta: { perm: 'gallery:view' } },
     { path: '/game', name: 'game', component: GameView, meta: { perm: 'game:view' } },
     { path: '/tools', name: 'tools', component: ToolsView, meta: { perm: 'tools:use' } },
+    { path: '/60s', name: 'news60s', component: News60sView, meta: { perm: 'news60s:view' } },
   ],
 })
 

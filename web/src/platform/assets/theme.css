@@ -1,6 +1,6 @@
 /* ============================================================
    股票数据管道 · 设计系统
-   风格：深海军蓝侧边栏 + 鎏金点缀 + 浅色卡片内容区
+   风格：浅色侧边栏 + 鎏金点缀 + 白卡片内容区
    涨跌语义：中国市场习惯（红涨绿跌）
    ============================================================ */
 :root {
@@ -12,7 +12,7 @@
   --flat: #86909c;
 
   /* 品牌 */
-  --ink: #1a2340;          /* 侧边栏深海军蓝 */
+  --ink: #1a2340;          /* 标题 / 强调文字 */
   --ink-2: #222d52;
   --ink-3: #2c3a68;
   --gold: #d3a24a;         /* 鎏金点缀 */
@@ -21,6 +21,7 @@
 
   /* 浅色内容区 */
   --bg: #eceef3;
+  --sider: #f7f8fb;
   --card: #ffffff;
   --text-1: #1d2129;
   --text-2: #4e5969;
@@ -93,7 +94,7 @@ body {
 .fall-bg { background: var(--fall-soft); }
 
 /* ---------- 通用小组件 ---------- */
-.page-wrap { max-width: 1440px; margin: 0 auto; }
+/* page-wrap 尺寸由壳层 App.vue 控制 */
 .section-title {
   font-size: 15px; font-weight: 650; letter-spacing: 0.02em;
   display: flex; align-items: center; gap: 8px;

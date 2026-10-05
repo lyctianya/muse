@@ -60,14 +60,16 @@ INSERT INTO permissions (key, description) VALUES
     ('gallery:upload', '相册新建 / 照片上传'),
     ('gallery:manage', '相册删除管理'),
     ('game:view', '游戏 / 排行榜'),
-    ('tools:use', '工具箱')
+    ('tools:use', '工具箱'),
+    ('news60s:view', '60秒新闻查看'),
+    ('news60s:sync', '60秒新闻同步 / 统计')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------- 种子：角色 ----------------
 INSERT INTO roles (name, description) VALUES
     ('admin', '管理员：全部权限'),
     ('operator', '运维：除用户管理外全部权限'),
-    ('viewer', '只读：市场概览 / 行情 / 市场深度 / 周文件下载 / 文件查看 / 博客 / 相册 / 游戏')
+    ('viewer', '只读：市场概览 / 行情 / 市场深度 / 周文件下载 / 文件查看 / 博客 / 相册 / 游戏 / 60秒新闻')
 ON CONFLICT (name) DO NOTHING;
 
 -- ---------------- 种子：角色-权限 ----------------
@@ -87,5 +89,6 @@ INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
 WHERE r.name = 'viewer'
   AND p.key IN ('market:view', 'quotes:view', 'extra:view', 'weeks:download',
-                'files:view', 'blog:view', 'gallery:view', 'game:view', 'tools:use')
+                'files:view', 'blog:view', 'gallery:view', 'game:view', 'tools:use',
+                'news60s:view')
 ON CONFLICT DO NOTHING;
