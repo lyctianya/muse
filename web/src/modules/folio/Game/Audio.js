@@ -150,16 +150,20 @@ export class Audio
         this.playlist = {}
         this.playlist.songs = [
             {
-                path: 'sounds/musics/Sudo.mp3',
-                name: 'Sudo.mp3'
+                path: 'https://stc1.yxt.com/a7413cc1/c4d3dc79/d722z723/dream.mp3',
+                name: '梦的点滴'
             },
             {
-                path: 'sounds/musics/Boy.mp3',
-                name: 'Boy.mp3'
+                path: 'https://stc1.yxt.com/a7413cc1/c4d3dc79/d722z723/myall.mp3',
+                name: 'my all'
             },
             {
-                path: 'sounds/musics/Baguira.mp3',
-                name: 'Baguira.mp3'
+                path: 'https://stc1.yxt.com/a7413cc1/c4d3dc79/d722z723/rockyou.mp3',
+                name: 'We will rock you'
+            },
+            {
+                path: 'https://stc1.yxt.com/a7413cc1/c4d3dc79/d722z723/xinyuan.mp3',
+                name: '心愿'
             },
         ]
         this.playlist.index = (Math.floor(Date.now() / 1000 / 60 / 3) % this.playlist.songs.length) // Different music every X minutes
