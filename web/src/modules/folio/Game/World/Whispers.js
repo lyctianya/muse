@@ -277,6 +277,35 @@ export class Whispers
         this.menu = {}
 
         this.menu.instance = this.game.menu.items.get('whispers')
+        if(!this.menu.instance)
+        {
+            // Menu entry removed in Muse hub — whispers stay in-world only
+            const noop = () => {}
+            this.menu.disabled = true
+            this.menu.container = document.createElement('div')
+            this.menu.inputGroup = document.createElement('form')
+            this.menu.input = document.createElement('input')
+            this.menu.previewMessage = document.createElement('div')
+            this.menu.previewMessageText = document.createElement('span')
+            this.menu.previewMessageFlag = document.createElement('div')
+            const flagHost = document.createElement('div')
+            flagHost.style.display = 'none'
+            flagHost.innerHTML = `
+                <div class="js-input-flag">
+                    <div class="js-flag-button"><img class="js-flag" alt=""></div>
+                    <div class="js-flag-select">
+                        <div class="js-flag-close"></div>
+                        <div class="js-flag-remove"></div>
+                        <input class="js-flag-search" />
+                        <div class="js-no-result"></div>
+                        <div class="js-scroller"></div>
+                    </div>
+                </div>`
+            document.body.appendChild(flagHost)
+            this.menu.inputFlag = new InputFlag(flagHost.querySelector('.js-input-flag'))
+            this.menu.instance = { events: { on: noop }, previewElement: document.createElement('div'), contentElement: this.menu.container }
+            return
+        }
         this.menu.container = this.menu.instance.contentElement
         this.menu.inputGroup = this.menu.container.querySelector('.js-input-group')
         this.menu.input = this.menu.inputGroup.querySelector('.js-input')

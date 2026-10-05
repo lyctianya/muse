@@ -116,6 +116,10 @@ export class BehindTheSceneArea extends Area
     
     setInteractivePoint()
     {
+        const menuInstance = this.game.menu.items.get('behindTheScene')
+        if(!menuInstance)
+            return
+
         this.interactivePoint = this.game.interactivePoints.create(
             this.references.items.get('interactivePoint')[0].position,
             'Behind the scene',
@@ -141,7 +145,7 @@ export class BehindTheSceneArea extends Area
             }
         )
 
-        this.game.menu.items.get('behindTheScene').events.on('close', () =>
+        menuInstance.events.on('close', () =>
         {
             this.interactivePoint.show()
         })

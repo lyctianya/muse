@@ -1147,6 +1147,22 @@ export class CircuitArea extends Area
     {
         this.menu = {}
         this.menu.instance = this.game.menu.items.get('circuit')
+        if(!this.menu.instance)
+        {
+            // Menu entry removed in Muse hub — keep race playable without menu UI
+            const noop = () => {}
+            this.menu.disabled = true
+            this.menu.updateLeaderboard = noop
+            this.menu.racingButtons = { classList: { add: noop, remove: noop } }
+            this.menu.resetTimeElement = { textContent: '' }
+            this.menu.leaderboardContainerElement = { classList: { add: noop, remove: noop } }
+            this.menu.leaderboardElement = { innerHTML: '' }
+            this.menu.instance = { isOpen: false, events: { on: noop }, contentElement: document.createElement('div') }
+            this.menu.inputGroup = document.createElement('form')
+            this.menu.input = document.createElement('input')
+            this.menu.inputFlag = { country: null, countries: new Map(), close: noop, events: { on: noop } }
+            return
+        }
         this.menu.resetTimeElement = this.menu.instance.contentElement.querySelector('.js-reset-time')
         this.menu.leaderboardContainerElement = this.menu.instance.contentElement.querySelector('.js-leaderboard-container')
         this.menu.leaderboardElement = this.menu.leaderboardContainerElement.querySelector('.js-leaderboard tbody')

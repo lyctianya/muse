@@ -1,8 +1,9 @@
 import * as THREE from 'three/webgpu'
 import { color, float, Fn, instancedArray, mix, normalWorld, positionGeometry, step, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
-import { Inputs } from '../../Inputs/Inputs.js'
 import { InteractivePoints } from '../../InteractivePoints.js'
 import { Area } from './Area.js'
+import { PixiuStatue } from './PixiuStatue.js'
+import { MUSE_PORTALS } from '../../../musePortals.js'
 import gsap from 'gsap'
 import { MeshDefaultMaterial } from '../../Materials/MeshDefaultMaterial.js'
 
@@ -73,10 +74,23 @@ export class LandingArea extends Area
 
     setControls()
     {
+        // Remove old gamepad / phone / gizmo props (replaced by pixiu statue)
+        const hidePattern = /^(gamepad|phone|gizmo|Plane)/i
+        for(const object of this.objects.items)
+        {
+            const name = object.visual?.object3D?.name || ''
+            if(hidePattern.test(name))
+                this.game.objects.disable(object)
+        }
+
+        const anchor = this.references.items.get('controlsInteractivePoint')[0].position
+        this.pixiuStatue = new PixiuStatue(anchor)
+        this.objects.hideable.push(this.pixiuStatue.group)
+
         // Interactive point
         const interactivePoint = this.game.interactivePoints.create(
-            this.references.items.get('controlsInteractivePoint')[0].position,
-            'Controls',
+            anchor,
+            '貔貅',
             InteractivePoints.ALIGN_RIGHT,
             InteractivePoints.STATE_CONCEALED,
             () =>
@@ -101,21 +115,72 @@ export class LandingArea extends Area
 
         // Menu instance
         const menuInstance = this.game.menu.items.get('controls')
+        this.wireMuseMenu(menuInstance)
 
         menuInstance.events.on('close', () =>
         {
             interactivePoint.show()
         })
 
-        menuInstance.events.on('open', () =>
+        this.wireGameMenu()
+    }
+
+    navigateMuse(def)
+    {
+        const bridge = this.game.museBridge
+        if(!bridge || typeof bridge.navigate !== 'function')
         {
-            if(this.game.inputs.mode === Inputs.MODE_GAMEPAD)
-                menuInstance.tabs.goTo('gamepad')
-            else if(this.game.inputs.mode === Inputs.MODE_MOUSEKEYBOARD)
-                menuInstance.tabs.goTo('mouse-keyboard')
-            else if(this.game.inputs.mode === Inputs.MODE_TOUCH)
-                menuInstance.tabs.goTo('touch')
-        })
+            this.game.notifications?.show(`无法打开「${def.title}」`, 'danger', 3)
+            return
+        }
+        this.game.menu.close()
+        bridge.navigate(def)
+    }
+
+    wireMuseMenu(menuInstance)
+    {
+        const list = menuInstance.contentElement.querySelector('.js-muse-modules')
+        if(!list || list.dataset.wired === '1')
+            return
+
+        list.dataset.wired = '1'
+        list.innerHTML = ''
+
+        for(const def of MUSE_PORTALS)
+        {
+            const button = document.createElement('button')
+            button.type = 'button'
+            button.className = 'muse-module'
+            button.dataset.museId = def.id
+            button.style.setProperty('--muse-accent', def.accent)
+            button.innerHTML = `
+                <span class="muse-module-accent"></span>
+                <span class="muse-module-title">${def.title}</span>
+                <span class="muse-module-go">进入</span>
+            `
+            button.addEventListener('click', () => this.navigateMuse(def))
+            list.appendChild(button)
+        }
+    }
+
+    wireGameMenu()
+    {
+        const menuInstance = this.game.menu.items.get('game')
+        if(!menuInstance || menuInstance.contentElement.dataset.wired === '1')
+            return
+
+        menuInstance.contentElement.dataset.wired = '1'
+        const button = menuInstance.contentElement.querySelector('.js-enter-game')
+        if(!button)
+            return
+
+        const def = MUSE_PORTALS.find((p) => p.id === 'game') || {
+            id: 'game',
+            title: '游戏',
+            route: '/game',
+            perm: 'game:view',
+        }
+        button.addEventListener('click', () => this.navigateMuse(def))
     }
 
     setBonfire()
